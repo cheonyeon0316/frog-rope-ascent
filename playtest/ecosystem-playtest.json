@@ -1,0 +1,346 @@
+{
+  "fixtureBased": true,
+  "results": [
+    {
+      "check": "fresh game starts in the pond",
+      "state": {
+        "height": 0,
+        "refuge": "",
+        "biome": "pond",
+        "attached": ""
+      }
+    },
+    {
+      "check": "local fall is caught by this ecosystem, actual input catches and eats its food",
+      "fixture": {
+        "zone": 1,
+        "biome": {
+          "id": "grass",
+          "name": "거대한 풀숲",
+          "start": 15,
+          "end": 35,
+          "center": {
+            "x": 18,
+            "y": 15,
+            "z": -4
+          },
+          "kind": "grass",
+          "foods": [
+            "fruit-fly",
+            "fly"
+          ],
+          "sky": "#d3e8b7",
+          "color": "#6fa345"
+        },
+        "target": {
+          "id": "food-basin-grass",
+          "position": {
+            "x": 18,
+            "y": 17.8,
+            "z": -4
+          },
+          "zone": 1,
+          "recovery": true,
+          "food": "fruit-fly"
+        },
+        "name": "초파리",
+        "position": {
+          "x": 18,
+          "y": 19,
+          "z": -4
+        }
+      },
+      "state": {
+        "height": 15.04,
+        "refuge": "",
+        "biome": "grass",
+        "attached": ""
+      }
+    },
+    {
+      "check": "local fall is caught by this ecosystem, actual input catches and eats its food",
+      "fixture": {
+        "zone": 2,
+        "biome": {
+          "id": "rocks",
+          "name": "바위 골짜기",
+          "start": 35,
+          "end": 60,
+          "center": {
+            "x": 36,
+            "y": 35,
+            "z": -12
+          },
+          "kind": "rock",
+          "foods": [
+            "fly",
+            "beetle"
+          ],
+          "sky": "#d8ddd4",
+          "color": "#9b9c88"
+        },
+        "target": {
+          "id": "food-basin-rocks",
+          "position": {
+            "x": 36,
+            "y": 37.8,
+            "z": -12
+          },
+          "zone": 2,
+          "recovery": true,
+          "food": "fly"
+        },
+        "name": "파리",
+        "position": {
+          "x": 36,
+          "y": 39,
+          "z": -12
+        }
+      },
+      "state": {
+        "height": 35.17,
+        "refuge": "",
+        "biome": "rocks",
+        "attached": ""
+      }
+    },
+    {
+      "check": "local fall is caught by this ecosystem, actual input catches and eats its food",
+      "fixture": {
+        "zone": 3,
+        "biome": {
+          "id": "flower",
+          "name": "거대한 꽃",
+          "start": 60,
+          "end": 90,
+          "center": {
+            "x": 40,
+            "y": 60,
+            "z": -32
+          },
+          "kind": "petal",
+          "foods": [
+            "pollen",
+            "bee"
+          ],
+          "sky": "#f1ded9",
+          "color": "#e3a2b4"
+        },
+        "target": {
+          "id": "food-basin-flower",
+          "position": {
+            "x": 40,
+            "y": 62.8,
+            "z": -32
+          },
+          "zone": 3,
+          "recovery": true,
+          "food": "pollen"
+        },
+        "name": "꽃가루",
+        "position": {
+          "x": 40,
+          "y": 64,
+          "z": -32
+        }
+      },
+      "state": {
+        "height": 59.9,
+        "refuge": "",
+        "biome": "flower",
+        "attached": ""
+      }
+    },
+    {
+      "check": "local fall is caught by this ecosystem, actual input catches and eats its food",
+      "fixture": {
+        "zone": 4,
+        "biome": {
+          "id": "tree",
+          "name": "오래된 나무",
+          "start": 90,
+          "end": 120,
+          "center": {
+            "x": 20,
+            "y": 90,
+            "z": -40
+          },
+          "kind": "branch",
+          "foods": [
+            "bee",
+            "moth"
+          ],
+          "sky": "#c3d8ba",
+          "color": "#80634b"
+        },
+        "target": {
+          "id": "food-basin-tree",
+          "position": {
+            "x": 20,
+            "y": 92.8,
+            "z": -40
+          },
+          "zone": 4,
+          "recovery": true,
+          "food": "bee"
+        },
+        "name": "벌",
+        "position": {
+          "x": 20,
+          "y": 94,
+          "z": -40
+        }
+      },
+      "state": {
+        "height": 90.05,
+        "refuge": "",
+        "biome": "tree",
+        "attached": ""
+      }
+    },
+    {
+      "check": "local fall is caught by this ecosystem, actual input catches and eats its food",
+      "fixture": {
+        "zone": 5,
+        "biome": {
+          "id": "mountain",
+          "name": "바위산 능선",
+          "start": 120,
+          "end": 145,
+          "center": {
+            "x": 0,
+            "y": 120,
+            "z": -34
+          },
+          "kind": "rock",
+          "foods": [
+            "beetle",
+            "moth"
+          ],
+          "sky": "#c6d6e4",
+          "color": "#7c8e9e"
+        },
+        "target": {
+          "id": "food-basin-mountain",
+          "position": {
+            "x": 0,
+            "y": 122.8,
+            "z": -34
+          },
+          "zone": 5,
+          "recovery": true,
+          "food": "beetle"
+        },
+        "name": "풍뎅이",
+        "position": {
+          "x": 0,
+          "y": 124,
+          "z": -34
+        }
+      },
+      "state": {
+        "height": 120.07,
+        "refuge": "",
+        "biome": "mountain",
+        "attached": ""
+      }
+    },
+    {
+      "check": "local fall is caught by this ecosystem, actual input catches and eats its food",
+      "fixture": {
+        "zone": 6,
+        "biome": {
+          "id": "clouds",
+          "name": "구름 바다",
+          "start": 145,
+          "end": 165,
+          "center": {
+            "x": -16,
+            "y": 145,
+            "z": -20
+          },
+          "kind": "cloud",
+          "foods": [
+            "dew"
+          ],
+          "sky": "#9dbfe0",
+          "color": "#e5edf8"
+        },
+        "target": {
+          "id": "food-basin-clouds",
+          "position": {
+            "x": -16,
+            "y": 147.8,
+            "z": -20
+          },
+          "zone": 6,
+          "recovery": true,
+          "food": "dew"
+        },
+        "name": "이슬",
+        "position": {
+          "x": -16,
+          "y": 149,
+          "z": -20
+        }
+      },
+      "state": {
+        "height": 144.91,
+        "refuge": "",
+        "biome": "clouds",
+        "attached": ""
+      }
+    },
+    {
+      "check": "local fall is caught by this ecosystem, actual input catches and eats its food",
+      "fixture": {
+        "zone": 7,
+        "biome": {
+          "id": "stars",
+          "name": "별의 길",
+          "start": 165,
+          "end": 180,
+          "center": {
+            "x": -10,
+            "y": 165,
+            "z": 0
+          },
+          "kind": "star",
+          "foods": [
+            "stardust"
+          ],
+          "sky": "#192846",
+          "color": "#dfc584"
+        },
+        "target": {
+          "id": "food-basin-stars",
+          "position": {
+            "x": -10,
+            "y": 167.8,
+            "z": 0
+          },
+          "zone": 7,
+          "recovery": true,
+          "food": "stardust"
+        },
+        "name": "별가루",
+        "position": {
+          "x": -10,
+          "y": 169,
+          "z": 0
+        }
+      },
+      "state": {
+        "height": 164.91,
+        "refuge": "",
+        "biome": "stars",
+        "attached": ""
+      }
+    },
+    {
+      "check": "real input catches a moth with its own model and moving path",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

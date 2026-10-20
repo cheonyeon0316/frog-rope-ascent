@@ -1,0 +1,46 @@
+{
+  "results": [
+    {
+      "check": "actual release adds velocity toward the fly in three dimensions",
+      "before": {
+        "attached": "fly-0",
+        "state": "playing",
+        "height": 0,
+        "dashing": false,
+        "v": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "after": {
+        "attached": "",
+        "state": "playing",
+        "height": 0.08,
+        "dashing": true,
+        "v": {
+          "x": 0.635,
+          "y": 2.664,
+          "z": -0.397
+        }
+      }
+    },
+    {
+      "check": "short boost ends while momentum and normal gravity continue",
+      "attached": "",
+      "state": "playing",
+      "height": 0.18,
+      "dashing": false,
+      "v": {
+        "x": 0.629,
+        "y": -1.84,
+        "z": -0.393
+      }
+    },
+    {
+      "check": "pause preserves the post-dash flight",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

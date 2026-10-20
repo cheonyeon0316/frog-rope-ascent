@@ -1,0 +1,142 @@
+{
+  "fixtureBased": true,
+  "results": [
+    {
+      "check": "local fall lands on terrace and real mouse input starts another swing",
+      "i": 3,
+      "fixture": {
+        "position": {
+          "x": -0.04708058525603226,
+          "y": 18,
+          "z": -5.599802087439515
+        },
+        "target": {
+          "x": 2.635019428992949,
+          "y": 17.8,
+          "z": -3.678570609924628
+        }
+      },
+      "landed": {
+        "height": 15.1,
+        "refuge": "refuge-3",
+        "attached": ""
+      },
+      "attached": "fly-refuge-3"
+    },
+    {
+      "check": "local fall lands on terrace and real mouse input starts another swing",
+      "i": 9,
+      "fixture": {
+        "position": {
+          "x": 3.374826383163045,
+          "y": 48,
+          "z": 4.468841783226011
+        },
+        "target": {
+          "x": 0.07608212703491457,
+          "y": 47.8,
+          "z": 5.034025073486568
+        }
+      },
+      "landed": {
+        "height": 45.1,
+        "refuge": "refuge-9",
+        "attached": ""
+      },
+      "attached": "fly-refuge-9"
+    },
+    {
+      "check": "local fall lands on terrace and real mouse input starts another swing",
+      "i": 15,
+      "fixture": {
+        "position": {
+          "x": -5.373200163448398,
+          "y": 78,
+          "z": -1.577567749264071
+        },
+        "target": {
+          "x": -2.7572143041264434,
+          "y": 77.8,
+          "z": -3.5878933100765527
+        }
+      },
+      "landed": {
+        "height": 75.1,
+        "refuge": "refuge-15",
+        "attached": ""
+      },
+      "attached": "fly-refuge-15"
+    },
+    {
+      "check": "local fall lands on terrace and real mouse input starts another swing",
+      "i": 21,
+      "fixture": {
+        "position": {
+          "x": 5.255025970183267,
+          "y": 108,
+          "z": -1.9351232655051753
+        },
+        "target": {
+          "x": 4.417880617585489,
+          "y": 107.8,
+          "z": 1.238171395562975
+        }
+      },
+      "landed": {
+        "height": 105.09,
+        "refuge": "refuge-21",
+        "attached": ""
+      },
+      "attached": "fly-refuge-21"
+    },
+    {
+      "check": "local fall lands on terrace and real mouse input starts another swing",
+      "i": 27,
+      "fixture": {
+        "position": {
+          "x": -3.0668535952370823,
+          "y": 138,
+          "z": 4.6855532251145515
+        },
+        "target": {
+          "x": -4.232909625410594,
+          "y": 137.8,
+          "z": 1.599276469681821
+        }
+      },
+      "landed": {
+        "height": 135.09,
+        "refuge": "refuge-27",
+        "attached": ""
+      },
+      "attached": "fly-refuge-27"
+    },
+    {
+      "check": "local fall lands on terrace and real mouse input starts another swing",
+      "i": 33,
+      "fixture": {
+        "position": {
+          "x": -0.3293777696442963,
+          "y": 168,
+          "z": -5.590305026102256
+        },
+        "target": {
+          "x": 2.4461841805257127,
+          "y": 167.8,
+          "z": -3.8067561096447062
+        }
+      },
+      "landed": {
+        "height": 165.1,
+        "refuge": "refuge-33",
+        "attached": ""
+      },
+      "attached": "fly-refuge-33"
+    },
+    {
+      "check": "outside first terrace a failed transition falls back to ground",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

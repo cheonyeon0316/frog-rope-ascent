@@ -1,0 +1,240 @@
+{
+  "format": "frog-ascent-backup",
+  "version": 1,
+  "createdAt": "2026-10-19T14:56:44.256Z",
+  "current": {
+    "version": 1,
+    "course": "ecosystem-main-v2",
+    "mode": "main",
+    "position": {
+      "x": 0.8341696858406067,
+      "y": 0.7095775008201599,
+      "z": 3.0127787590026855
+    },
+    "velocity": {
+      "x": 1.81354558467865,
+      "y": 0.5077587366104126,
+      "z": -1.1770813465118408
+    },
+    "attached": null,
+    "length": 0,
+    "peak": 0,
+    "time": 0.37500000000000033,
+    "tick": 45,
+    "falls": 0,
+    "finished": false,
+    "eatenFlies": [],
+    "anchorPhases": [
+      {
+        "id": "fly-1-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-2-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-3-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-4-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-12-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-13-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-14-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-15-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-16-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-17-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-18-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-19-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-20-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-21-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-22-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-23-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-25-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-27-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-29-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-30-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-31-b",
+        "time": 0.37500000000000033
+      },
+      {
+        "id": "fly-32-b",
+        "time": 0.37500000000000033
+      }
+    ]
+  },
+  "previous": {
+    "version": 1,
+    "course": "ecosystem-main-v2",
+    "mode": "main",
+    "position": {
+      "x": 0,
+      "y": 0.9493228793144226,
+      "z": 3.5
+    },
+    "velocity": {
+      "x": 0,
+      "y": -0.1499500423669815,
+      "z": 0
+    },
+    "attached": null,
+    "length": 0,
+    "peak": 0,
+    "time": 0,
+    "tick": 0,
+    "falls": 0,
+    "finished": false,
+    "eatenFlies": [],
+    "anchorPhases": [
+      {
+        "id": "fly-1-b",
+        "time": 0
+      },
+      {
+        "id": "fly-2-b",
+        "time": 0
+      },
+      {
+        "id": "fly-3-b",
+        "time": 0
+      },
+      {
+        "id": "fly-4-b",
+        "time": 0
+      },
+      {
+        "id": "fly-12-b",
+        "time": 0
+      },
+      {
+        "id": "fly-13-b",
+        "time": 0
+      },
+      {
+        "id": "fly-14-b",
+        "time": 0
+      },
+      {
+        "id": "fly-15-b",
+        "time": 0
+      },
+      {
+        "id": "fly-16-b",
+        "time": 0
+      },
+      {
+        "id": "fly-17-b",
+        "time": 0
+      },
+      {
+        "id": "fly-18-b",
+        "time": 0
+      },
+      {
+        "id": "fly-19-b",
+        "time": 0
+      },
+      {
+        "id": "fly-20-b",
+        "time": 0
+      },
+      {
+        "id": "fly-21-b",
+        "time": 0
+      },
+      {
+        "id": "fly-22-b",
+        "time": 0
+      },
+      {
+        "id": "fly-23-b",
+        "time": 0
+      },
+      {
+        "id": "fly-25-b",
+        "time": 0
+      },
+      {
+        "id": "fly-27-b",
+        "time": 0
+      },
+      {
+        "id": "fly-29-b",
+        "time": 0
+      },
+      {
+        "id": "fly-30-b",
+        "time": 0
+      },
+      {
+        "id": "fly-31-b",
+        "time": 0
+      },
+      {
+        "id": "fly-32-b",
+        "time": 0
+      }
+    ]
+  },
+  "best": 0,
+  "settings": {
+    "assisted": true,
+    "mute": false,
+    "motion": true,
+    "volume": 0.45,
+    "toggle": false,
+    "quality": "high"
+  }
+}

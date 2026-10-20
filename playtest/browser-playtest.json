@@ -1,0 +1,62 @@
+{
+  "results": [
+    {
+      "action": "real-mouse-catch",
+      "state": "playing",
+      "height": 0,
+      "attached": "fly-0",
+      "peak": "0 m",
+      "mode": "training"
+    },
+    {
+      "action": "real-keyboard-swing",
+      "state": "playing",
+      "height": 1.57,
+      "attached": "fly-0",
+      "peak": "1 m",
+      "mode": "training"
+    },
+    {
+      "action": "pause-freezes-rope-and-position",
+      "state": "paused",
+      "height": 1.49,
+      "attached": "fly-0",
+      "peak": "1 m",
+      "mode": "training"
+    },
+    {
+      "action": "resume-reacquire-and-release",
+      "state": "playing",
+      "height": 0,
+      "attached": "",
+      "peak": "1 m",
+      "mode": "training"
+    },
+    {
+      "action": "actual-browser-storage-reload",
+      "state": "paused",
+      "height": 0,
+      "attached": "",
+      "peak": "0 m",
+      "mode": "main"
+    },
+    {
+      "action": "settings-and-small-window",
+      "state": "playing",
+      "height": 0,
+      "attached": "",
+      "peak": "0 m",
+      "mode": "main"
+    }
+  ],
+  "errors": [],
+  "screenshots": [
+    "swing",
+    "paused",
+    "flight",
+    "main-start",
+    "restored",
+    "settings",
+    "small-window"
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "results": [
+    {
+      "check": "left-held then right-drag rotates while hanging",
+      "before": {
+        "yaw": 0.52,
+        "pitch": 0.36,
+        "attached": "fly-0",
+        "state": "playing"
+      },
+      "after": {
+        "yaw": 0.04,
+        "pitch": 0.54,
+        "attached": "fly-0",
+        "state": "playing"
+      }
+    },
+    {
+      "check": "release right keeps tongue and stops drag-look",
+      "passed": true
+    },
+    {
+      "check": "release left while right-held eats fly and continues camera rotation",
+      "passed": true
+    },
+    {
+      "check": "right-held then left-press also catches and releases correctly",
+      "passed": true
+    },
+    {
+      "check": "toggle attachment supports right-drag without detaching",
+      "passed": true
+    },
+    {
+      "check": "pause clears both-button capture and resume can orbit the preserved attachment",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

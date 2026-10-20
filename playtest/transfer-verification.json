@@ -1,0 +1,27 @@
+{
+  "testedAt": "2026-10-13T12:12:57.2970735+09:00",
+  "extractedIntoUnicodeAndSpaceFolder": true,
+  "originalFilesVerified": 1551,
+  "runtimeNode": "v24.19.0",
+  "runtimePnpm": "11.25.0",
+  "emptyStoreInstall": {
+    "reused": 0,
+    "frozenLockfile": true,
+    "downloaded": 49
+  },
+  "tests": {
+    "files": 6,
+    "passed": 48
+  },
+  "buildPassed": true,
+  "packagedGameURL": "http://127.0.0.1:5183/",
+  "profileTransferPassed": true,
+  "pageErrors": 0,
+  "failedResponses": 0,
+  "externalRequests": 0,
+  "unexpectedSecretOrCacheEntries": 0,
+  "serverDeniedToolsPath": 404,
+  "serverDeniedTraversal": 400,
+  "actualOtherPCNotTested": true,
+  "actualUserSaveIncluded": false
+}

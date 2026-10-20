@@ -1,0 +1,21 @@
+{
+  "results": [
+    {
+      "check": "real release pulls fly into mouth and disables old target",
+      "passed": true
+    },
+    {
+      "check": "paused wall-clock time does not regenerate fly",
+      "passed": true
+    },
+    {
+      "check": "regenerated fly can be caught again with real input",
+      "passed": true
+    },
+    {
+      "check": "actual IndexedDB stores consumed fly and reload preserves cooldown",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

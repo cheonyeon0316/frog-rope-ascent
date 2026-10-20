@@ -1,0 +1,80 @@
+{
+  "results": [
+    {
+      "check": "real Space produces the higher ground jump",
+      "passed": true
+    },
+    {
+      "check": "hold mode Space eats and launches; repeated key does not auto-chain; fresh press launches again",
+      "launch": {
+        "state": "playing",
+        "attached": "",
+        "height": 0.27,
+        "dash": "launch",
+        "refuge": "",
+        "v": {
+          "x": 2.54,
+          "y": 9.489,
+          "z": -1.588
+        }
+      },
+      "chained": {
+        "state": "playing",
+        "attached": "",
+        "height": 4.26,
+        "dash": "launch",
+        "refuge": "",
+        "v": {
+          "x": 2.86,
+          "y": 7.332,
+          "z": -4.734
+        }
+      }
+    },
+    {
+      "check": "toggle mode also supports Space launch",
+      "passed": true
+    },
+    {
+      "check": "strong dash survives pause and reload, then crosses into grass with real Space input",
+      "paused": {
+        "state": "paused",
+        "attached": "",
+        "height": 10.03,
+        "dash": "launch",
+        "refuge": "",
+        "v": {
+          "x": 5.964,
+          "y": 10.207,
+          "z": -3.976
+        }
+      },
+      "restored": {
+        "state": "paused",
+        "attached": "",
+        "height": 10.03,
+        "dash": "launch",
+        "refuge": "",
+        "v": {
+          "x": 5.964,
+          "y": 10.207,
+          "z": -3.976
+        }
+      },
+      "landed": {
+        "state": "playing",
+        "attached": "",
+        "height": 14.8,
+        "dash": "",
+        "refuge": "basin-grass",
+        "v": {
+          "x": 0.844,
+          "y": -0.829,
+          "z": 1.678
+        }
+      },
+      "fixtureBased": true
+    }
+  ],
+  "errors": []
+}

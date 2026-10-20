@@ -1,0 +1,121 @@
+{
+  "results": [
+    {
+      "check": "real input catches a moving fly and freezes its world position",
+      "fixture": {
+        "area": "moving",
+        "position": {
+          "x": 3.299210644476709,
+          "y": 5.55,
+          "z": 4.52495404654805
+        },
+        "target": {
+          "id": "fly-1-relay",
+          "position": {
+            "x": 1.154723725566848,
+            "y": 7,
+            "z": 3.8587339162918175
+          },
+          "zone": 0,
+          "recovery": false,
+          "motion": {
+            "amplitude": {
+              "x": 0.4,
+              "y": 0.12,
+              "z": 0.25
+            },
+            "period": 2.8,
+            "phase": 0
+          }
+        }
+      },
+      "beforeFly": {
+        "x": 1.2798,
+        "y": 7.0713,
+        "z": 3.9369
+      },
+      "afterFly": {
+        "x": 1.2798,
+        "y": 7.0713,
+        "z": 3.9369
+      },
+      "passed": true
+    },
+    {
+      "check": "pause freezes moving fly and tether",
+      "passed": true
+    },
+    {
+      "check": "hold Space swims upward and real mouse input reconnects to the exit fly",
+      "fixture": {
+        "area": "water",
+        "position": {
+          "x": -3.3371364533234797,
+          "y": 30.55,
+          "z": -4.497056847750491
+        },
+        "target": {
+          "id": "fly-water-6-exit",
+          "position": {
+            "x": -2.3371364533234797,
+            "y": 38.6,
+            "z": -4.897056847750491
+          },
+          "zone": 0,
+          "recovery": false
+        }
+      },
+      "afterSwim": {
+        "state": "playing",
+        "height": 35.47,
+        "swimming": true,
+        "time": 1.175,
+        "attached": "",
+        "v": {
+          "x": 0,
+          "y": 4.175,
+          "z": 0
+        }
+      },
+      "afterEatDash": {
+        "state": "playing",
+        "height": 37.84,
+        "swimming": false,
+        "time": 1.6917,
+        "attached": "",
+        "v": {
+          "x": 1.612,
+          "y": 2.597,
+          "z": -0.645
+        }
+      },
+      "passed": true
+    },
+    {
+      "check": "landing on the marked leaf actually launches the frog upward",
+      "fixture": {
+        "area": "spring",
+        "position": {
+          "x": 3.2610516373348584,
+          "y": 22.5,
+          "z": -4.552531407759384
+        }
+      },
+      "after": {
+        "state": "playing",
+        "height": 20.17,
+        "swimming": false,
+        "time": 0.4583,
+        "attached": "",
+        "v": {
+          "x": 0,
+          "y": 8,
+          "z": 0
+        }
+      },
+      "passed": true
+    }
+  ],
+  "errors": [],
+  "fixtureBased": true
+}

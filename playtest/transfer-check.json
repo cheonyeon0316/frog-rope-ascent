@@ -1,0 +1,11 @@
+{
+  "gameURL": "http://127.0.0.1:5173/",
+  "independentBrowserProfiles": true,
+  "importExactTime": 0.375,
+  "savedTime": 0.37500000000000033,
+  "corruptedImportPreservesSave": true,
+  "settingsRestored": true,
+  "errors": [],
+  "failedResponses": [],
+  "remoteRequests": []
+}
