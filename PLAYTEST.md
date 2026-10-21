@@ -1,18 +1,19 @@
-# 생태계 코스 재구성 검증, 2026-10-21
+# 생태계 코스와 먹기 스윙 최종 검증, 2026-10-21
 
 새 게임은 `ecosystem-main-v3`를 사용한다. `ROUTE_PLACEMENTS`의 35개 수작업 지형과 별 정상을 잎, 뿌리, 암반, 겹친 꽃잎, 가지, 능선, 구름과 운석으로 구성했다. 구역 하단의 회복 지형도 테마별 실제 형상으로 교체했다. 렌더와 Rapier 충돌은 같은 `platformMesh`를 사용한다. v2 코스는 `ecosystem-v2.ts`에 보존해 기존 저장의 좌표를 유지한다.
 
-먹이를 잡은 뒤 이동하는 대시는 공중 부양처럼 보이지 않도록 목표까지의 짧은 포물선 경로로 바꿨다. 가까운 먹이는 더 빨리 도착하고, 먹이 앞에서 감속한 뒤에는 도착 속도와 중력이 이어진다. 카메라는 중심과 좌우·상하를 포함한 다섯 지점으로 지형을 검사해 장애물 앞에서 멈추며, 가림이 남으면 시야를 막는 충돌 지형만 일시적으로 반투명하게 한다. 테마 진입 시 카메라를 자동 회전시키던 동작을 제거해 WASD 방향과 플레이어가 조절한 시점을 보존한다.
+Space 먹기 대시는 목표 좌표까지 이동시키는 동작을 제거하고, 먹이를 삼키며 현재 스윙 접선 방향으로 한 번의 제한된 충격을 주는 방식으로 바꿨다. 개구리는 기존 관성을 유지하고 충격이 끝난 뒤 정상 중력과 공중 제어를 받는다. 일반 혀 해제는 별도의 약한 보너스만 준다. 카메라는 중심과 좌우·상하를 포함한 다섯 지점으로 지형을 검사해 장애물 앞에서 멈추며, 가림이 남으면 시야를 막는 충돌 지형만 일시적으로 반투명하게 한다. 테마 진입 시 카메라를 자동 회전시키던 동작을 제거해 WASD 방향과 플레이어가 조절한 시점을 보존한다.
 
-- `pnpm test`는 11개 파일, 72개 검사 통과. 새 검사는 모든 공유 메시의 유한 좌표와 닫힌 삼각형 구조, 35개 이동 구간의 점프·먹기·재연결·착지, v2 저장 복원, 목표까지의 포물선 대시, 카메라 테마 전환 뒤 WASD 방향 보존을 포함한다. Vitest는 게임의 `tests/`만 수집한다.
+- `pnpm test`는 11개 파일, 65개 검사 통과. 접선 충격 계산, 35개 이동 구간의 먹이 연결·착지, v2 저장 복원, 구역별 회복 지형과 카메라 방향 보존을 포함한다. Vitest는 게임의 `tests/`만 수집한다.
 - Blender 5.2.2에서 `[validate_asset_glbs.py](assets-source/blender/validate_asset_glbs.py)`로 GLB 26개를 다시 불러왔고 메시·경계 검사를 모두 통과했다. 개구리와 8종 먹이의 GLB는 라이브러리에 보존한다. 현재 게임 화면은 기존 절차형 개구리와 먹이 표현으로 돌아갔고, 환경 GLB 17종으로 생태계 소품 18개를 표시한다. 충돌은 검증된 코스 지형을 유지한다.
 - `pnpm test:assets`는 실제 브라우저와 단일 HTML `file://` 실행에서 환경 GLB 17/17 로드, 절차형 개구리의 표시 상태, 절차형 먹이 앵커, 생태계 소품 18개 배치를 통과했다. 브라우저 JS 오류는 0건이다.
-- `traverses from the pond to the summit with input only and no position resets`는 연못의 실제 시작 위치에서 한 시뮬레이션을 진행한다. 시작 후 위치나 속도를 강제로 변경하지 않는다. 점프·먹이 연결·Space 대시·공중 방향 보정으로 정상 완료까지 도달하며 재설정 이벤트가 없음을 검사했다. 이는 결정적 입력 정책의 자동 완주이며 사람 플레이 결과가 아니다.
+- `traverses from the pond to the summit with input only and no position resets`는 연못의 실제 시작 위치에서 한 시뮬레이션을 진행한다. 시작 후 위치나 속도를 강제로 변경하지 않는다. 점프·먹이 연결·Space 먹기 스윙·공중 방향 보정으로 정상 완료까지 도달하며 재설정 이벤트가 없음을 검사했다. 이는 결정적 입력 정책의 자동 완주이며 사람 플레이 결과가 아니다.
 - `pnpm test:ecosystem`은 실제 브라우저 시작 화면, 7개 지역 회복 착지, 마우스 먹이 연결과 먹기, 나방 연결, 작은 창을 검사했다. 구역별 낙하 상태를 주입하는 기능 검사이며 오류 0건이다.
-- `pnpm test:launch`는 실제 Space 점프, 홀드와 토글, 키 반복 방지, 대시 도중 일시정지·새로고침 복원, 다음 먹이 재연결 후 풀숲 착지를 통과했다. 오류 0건이다.
+- `pnpm test:launch`는 실제 Space 점프, 먹기 스윙, 관성 유지와 중력 복귀, 홀드와 토글, 키 반복 방지, 일시정지·새로고침 복원, 다음 먹이 재연결 후 풀숲 착지를 통과했다. `pnpm test:dash`는 일반 혀 해제의 속도 보존과 중력을 확인했다. 오류 0건이다.
 - `node tools/capture-level-overviews.mjs`로 8개 구역의 전체 형상을 캡처했다. 이 캡처는 진단 카메라를 사용하며 기본 플레이 시점과 구분한다.
 - 꽃 구역 위치를 불러온 별도 브라우저에서 테마 진입과 W 입력을 검사했다. 카메라 yaw `0.4954`, WASD 기준 `0.4954`, W 입력 `(-0.4754, -0.8798)`로 같은 방향을 유지했고 JS 오류는 없었다. 결과: [카메라 입력 회귀 검사](playtest/tongumble-camera/camera-controls-playtest.json), [꽃 구역 화면](playtest/tongumble-camera/camera-controls-flower.png).
 - `pnpm build:html` 타입 검사, 빌드, 단일 HTML 생성 통과. Windows 실행용 `game/`에도 새 빌드를 복사했다. `node tools/browser-build-smoke.mjs`에서 배포 주소 `http://127.0.0.1:5280/`와 직접 연 `frog-ascent.html` 모두 v3 코스 시작, Space 점프, 일시정지, 새로고침 후 저장 복원을 통과했다. 오류 0건이다. 결과는 `playtest/level-rebuild/build-smoke.json`이다. 기존 대형 번들 경고는 남아 있다.
+- 공개 GitHub Pages 배포가 성공했다. 공개 HTML과 게임 스크립트가 HTTP 200으로 응답했고, Playwright로 연습 코스와 새 생태계 시작을 확인했다. 브라우저 JS 오류는 0건이다.
 
 이번 결과는 [생태계 브라우저 결과](playtest/level-rebuild/ecosystem-playtest.json), [대시 브라우저 결과](playtest/level-rebuild/launch-playtest.json), [연못의 GLB 적용 화면](playtest/ecosystem-pond.png), [전체 형상 캡처 정보](playtest/level-rebuild/overviews.json)에 있다. 대표 화면은 [연못의 GLB 적용](playtest/ecosystem-pond.png), [꽃 전체 형상](playtest/level-rebuild/overview-flower.png), [구름 전체 형상](playtest/level-rebuild/overview-clouds.png), [나무의 기본 시점](playtest/level-rebuild/ecosystem-tree.png)이다.
 
