@@ -74,7 +74,7 @@ async function boot(): Promise<void> {
       if (mode === 'main' && !saved) await store.save(sim.snapshot());
       state = saved ? 'paused' : 'playing'; awaitingGrip = false;
       input.active = state === 'playing'; audio.unlock(); ui.show(state, sim);
-      if (!saved) ui.notify(mode === 'training' ? 'Space 점프 → 먹이 잡기 → 매달린 채 Space로 먹고 강하게 대쉬!' : '먹이를 먹고 높이를 확보한 뒤, 다음 지형 위 먹이에 다시 연결하세요. 매달린 채 Space로 대시합니다.', 5200);
+      if (!saved) ui.notify(mode === 'training' ? 'Space 점프 → 먹이 연결 → 매달린 채 Space로 먹고 스윙을 만들어 보세요!' : '먹이를 먹으면 기존 스윙 방향으로 튕겨 나가요. 다음 지형 위 먹이에 다시 연결하세요.', 5200);
     } catch (e) {
       state = 'error'; ui.show(state, sim, e instanceof Error ? e.message : '시작하지 못했습니다.');
     } finally { starting = false; }
@@ -157,8 +157,8 @@ async function boot(): Promise<void> {
         if (e.type === 'miss') ui.notify('가까운 먹이를 조준해 보세요. 사거리는 10m입니다.', 1300);
         if (e.type === 'blocked') ui.notify('혀가 지형에 막혔어요. 다른 각도로 연결해 보세요.', 1600);
         if (e.type === 'recovery') ui.notify('붙잡았어요. 다시 위로!', 1400);
-        if (e.type === 'eat') ui.notify(`${FOOD_NAMES[food ?? 'fly']} 꿀꺽! 먹이 쪽으로 도약 · 3초 뒤 다시 나타나요.`, 1500);
-        if (e.type === 'dash' && e.reason === 'launch') ui.notify('먹고 발사! 다음 먹이에 다시 혀를 걸어보세요.', 1500);
+        if (e.type === 'eat') ui.notify(`${FOOD_NAMES[food ?? 'fly']} 꿀꺽! 3초 뒤 다시 나타나요.`, 1500);
+        if (e.type === 'swing' && e.reason === 'eat-swing') ui.notify('먹기 스윙! 접선 방향으로 날아가요. 다음 지형에 다시 연결해 보세요.', 1500);
         if ((e.type === 'catch' || e.type === 'recovery') && sim.anchor?.motion && !seenMoving) {
           seenMoving = true; ui.notify('움직이는 먹이도 잡으면 멈춰요! 스윙한 뒤 다음 먹이로 도약하세요.', 3500);
         }

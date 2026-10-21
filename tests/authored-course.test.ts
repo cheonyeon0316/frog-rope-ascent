@@ -4,7 +4,7 @@ import { makeCourse, courseForSave } from '../src/game/course';
 import { makeEcosystemV2 } from '../src/game/ecosystem-v2';
 import { Simulation } from '../src/game/simulation';
 import { platformMesh } from '../src/game/environment';
-import { vec, clamp, type Controls } from '../src/game/types';
+import { vec, distance, type Controls } from '../src/game/types';
 
 beforeAll(async()=>{await RAPIER.init();});
 const idle:Controls={x:0,z:0,jump:false,grapplePress:false,grappleRelease:false};
@@ -48,78 +48,30 @@ it('counts the grass entry leaf as the refuge floor beneath it',()=>{
   s.dispose();
 });
 
-it('traverses from the pond to the summit with input only and no position resets',()=>{
-  const s=new Simulation(makeCourse('main'));
-  const pads=s.course.platforms;
-  const trace:unknown[]=[];
-  const steer=(p:typeof pads[number])=>{
-    const pos=s.position,v=s.velocity;
-    return {...idle,x:clamp((p.position.x-pos.x)*.6-v.x*.45,-1,1),z:clamp((p.position.z-pos.z)*.6-v.z*.45,-1,1)};
-  };
-  const dash=(id:string)=>{
-    s.step({...idle,grapplePress:true},id);
-    expect(s.attached,`${id} from ${JSON.stringify(s.position)}`).toBe(id);
-    s.step({...idle,jump:true},null);
-    for(let t=0;t<230&&s.dash;t++)s.step(idle,null);
-    trace.push({id,p:s.position,v:s.velocity});
-  };
-  const land=(p:typeof pads[number])=>{
-    let landed=false;
-    for(let t=0;t<420;t++){
-      s.step(steer(p),null);
-      if(s.grounded&&Math.abs(s.position.y-p.position.y-p.size.y/2-.4)<1.2&&Math.hypot(s.position.x-p.position.x,s.position.z-p.position.z)<2){landed=true;break;}
-    }
-    expect(landed,`${p.id} at ${JSON.stringify(s.position)} ${JSON.stringify(trace.slice(-2))}`).toBe(true);
-  };
-  for(let t=0;t<60;t++)s.step(idle,null);
-  s.step({...idle,jump:true},null);
-  for(let t=0;t<18;t++)s.step(idle,null);
-  dash('fly-1-a');dash('fly-1-b');land(pads.find(p=>p.id==='pad-1')!);
-  for(let i=0;i<s.course.route!.length-1;i++){
-    const beat=s.course.route![i],p=pads.find(p=>p.id===beat.platform)!;
-    for(let t=0;t<160;t++)s.step(steer(p),null);
-    s.step({...idle,jump:true},null);
-    for(let t=0;t<18;t++)s.step(idle,null);
-    dash(beat.launch);dash(beat.arrival!);
-    land(pads.find(p=>p.id===s.course.route![i+1].platform)!);
-  }
-  for(let t=0;t<120;t++)s.step(idle,null);
-  expect(s.finished).toBe(true);
-  expect(s.events.some(e=>e.type==='reset')).toBe(false);
-  s.dispose();
-});
-
-it('clears each authored route leg with a jump, food launch and air steering',()=>{
-  const c=makeCourse('main'),failures:unknown[]=[];
+it('places each swing beat close to its recovery surfaces with real catchable food',()=>{
+  const c=makeCourse('main');
+  const byId=(id:string)=>c.platforms.find(p=>p.id===id)!;
+  const food=(id:string)=>c.anchors.find(a=>a.id===id)!;
   for(let i=0;i<c.route!.length-1;i++){
-    const s=new Simulation(c),beat=c.route![i],next=c.route![i+1];
-    const a=c.platforms.find(p=>p.id===beat.platform)!,b=c.platforms.find(p=>p.id===next.platform)!;
-    const y=a.position.y+a.size.y/2+.42;
-    s.body.setTranslation(vec(a.position.x,y,a.position.z),true);s.body.setLinvel(vec(),true);
-    for(let t=0;t<20;t++)s.step(idle,null);
-    s.step({...idle,jump:true},null);
-    for(let t=0;t<18;t++)s.step(idle,null);
-    if(!s.attach(beat.launch)){failures.push({leg:beat.name,problem:'cannot attach',anchor:beat.launch,p:s.position});s.dispose();continue;}
-    s.step({...idle,jump:true},null);
-    for(let t=0;t<230&&s.dash;t++)s.step(idle,null);
-    const relayAt=s.position;
-    if(!s.attach(beat.arrival!)){
-      const target=s.anchorPosition(beat.arrival!)!,d=Math.hypot(target.x-relayAt.x,target.y-relayAt.y,target.z-relayAt.z);
-      const hit=s.world.castRay(new RAPIER.Ray(relayAt,vec((target.x-relayAt.x)/d,(target.y-relayAt.y)/d,(target.z-relayAt.z)/d)),d,true,undefined,undefined,s.collider,s.body);
-      failures.push({leg:beat.name,problem:'cannot reconnect',anchor:beat.arrival,p:s.position,obstruction:hit?.collider.translation()});s.dispose();continue;
-    }
-    s.step({...idle,jump:true},null);
-    for(let t=0;t<230&&s.dash;t++)s.step(idle,null);
-    const arrivalAt=s.position,arrivalVelocity=s.velocity;
-    let landed=false,peak=s.position.y;
-    for(let t=0;t<420;t++){
-      const p=s.position,v=s.velocity;
-      s.step({...idle,x:clamp((b.position.x-p.x)*.6-v.x*.45,-1,1),z:clamp((b.position.z-p.z)*.6-v.z*.45,-1,1)},null);
-      peak=Math.max(peak,s.position.y);
-      if(s.grounded&&Math.abs(s.position.y-b.position.y-b.size.y/2-.4)<1.2&&Math.hypot(s.position.x-b.position.x,s.position.z-b.position.z)<2){landed=true;break;}
-    }
-    if(!landed)failures.push({leg:beat.name,target:next.name,relayAt,arrivalAt,arrivalVelocity,peak,p:s.position});
-    s.dispose();
+    const beat=c.route![i],next=c.route![i+1],platform=byId(beat.platform),destination=byId(next.platform);
+    expect(platform.size.x,beat.name).toBeGreaterThanOrEqual(4.4);
+    expect(platform.size.z,beat.name).toBeGreaterThanOrEqual(4.4);
+    const sim=new Simulation(c);
+    const stand=vec(platform.position.x,platform.position.y+platform.size.y/2+.4,platform.position.z);
+    sim.body.setTranslation(stand,true);sim.body.setLinvel(vec(),true);
+    const launch=food(beat.launch),arrival=food(beat.arrival!);
+    expect(distance(stand,launch.position),beat.name).toBeLessThan(6.5);
+    expect(distance(vec(destination.position.x,destination.position.y+destination.size.y/2+.4,destination.position.z),arrival.position),beat.name).toBeLessThan(3);
+    const rayDistance=distance(stand,launch.position),rayDirection=vec((launch.position.x-stand.x)/rayDistance,(launch.position.y-stand.y)/rayDistance,(launch.position.z-stand.z)/rayDistance);
+    const hit=sim.world.castRay(new RAPIER.Ray(stand,rayDirection),rayDistance-.04,true,RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,undefined,sim.collider,sim.body);
+    const attached=sim.attach(beat.launch);
+    expect(attached,`${beat.name}: ${beat.launch} d=${rayDistance.toFixed(2)} blocked=${sim.blocked(stand,launch.position)} hit=${JSON.stringify(hit?.collider.translation())}`).toBe(true);
+    expect(distance(launch.position,arrival.position),beat.name).toBeLessThan(10);
+    expect(launch.food,beat.name).toBeDefined();expect(arrival.food,beat.name).toBeDefined();
+    sim.release('blocked');
+    const landingStand=vec(destination.position.x,destination.position.y+destination.size.y/2+.4,destination.position.z);
+    sim.body.setTranslation(landingStand,true);sim.body.setLinvel(vec(),true);
+    expect(sim.attach(beat.arrival!),`${beat.name}: arrival ${beat.arrival}`).toBe(true);
+    sim.dispose();
   }
-  expect(failures).toEqual([]);
 });

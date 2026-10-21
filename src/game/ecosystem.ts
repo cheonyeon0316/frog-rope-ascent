@@ -13,8 +13,8 @@ export const ROUTE_PLACEMENTS: Placement[] = [
   ['암벽으로 향한 잎 끝',1,24,30,-7,'leaf',5.4,.45,7,1.1,.8],
   ['골짜기 입구 돌턱',2,30.5,35.6,-9,'stone',6,2,6,.2],
   ['골짜기 안쪽 쐐기',2,35,40,-6,'stone',6,3,7,-.5],
-  ['오른쪽 암벽 선반',2,39,45.8,-11,'stone',6,2.6,6,.4],
-  ['암벽 틈 되돌기',2,34.5,50.2,-15,'stone',5.8,3,7,-.2],
+  ['오른쪽 암벽 선반',2,39,45.8,-8,'stone',6,2.6,6,.4],
+  ['암벽 틈 되돌기',2,34.5,50.2,-16,'stone',5.8,3,7,-.2],
   ['꽃 줄기 아래 암반',2,36,55.1,-19,'stone',6,2,6,.4],
   ['꽃의 아래쪽 잎',3,39,60.5,-26,'leaf',6,.4,7,.2,.5],
   ['줄기 오른쪽 잎',3,44,65.2,-28,'leaf',6,.5,8,-.7,.8],
@@ -78,12 +78,14 @@ export function makeEcosystem(): Course {
   }
   const route: NonNullable<Course['route']> = [];
   const routePads = ROUTE_PLACEMENTS.map(([name,zone,x,top,z,form,w,h,d,yaw,bend], index) => {
-    const p = piece(`pad-${index+1}`,zone,vec(x,top-h/2,z),vec(w,h,d),form,yaw,bend);
+    // A little more real landing area gives the player room to build a swing
+    // without turning every route beat into a broad, flat platform.
+    const p = piece(`pad-${index+1}`,zone,vec(x,top-h/2,z),vec(w*1.1,h,d*1.1),form,yaw,bend);
     if (zone === 7) p.color = '#666a82';
     // Keep the route's springy leaf readable as a small rebound, rather than
     // sending a landing outside the next rope arc.
     if (index === 3) p.bounce = 2.8;
-    route.push({platform:p.id,launch:`fly-${index+2}-a`,arrival:`fly-${index+1}-b`,name,zone}); return p;
+    route.push({platform:p.id,launch:`fly-${index+2}-a`,arrival:`fly-${index+2}-b`,name,zone}); return p;
   });
   const summit: Platform = {id:'summit',position:vec(-8,180,6),size:vec(8,.4,8),kind:'star',zone:7};
   platforms.push(summit);
@@ -92,15 +94,17 @@ export function makeEcosystem(): Course {
   let previous = start;
   for (let index=0; index < route.length; index++) {
     const i=index+1, p=index===35?summit:routePads[index], b=biomes[p.zone];
-    anchors.push({id:`fly-${i}-a`,position:vec(previous.x-(p.position.x-previous.x)*.12,i===1?4.5:top(p)+3.2,previous.z-(p.position.z-previous.z)*.12),zone:p.zone,recovery:false,food:b.foods[(i+1)%b.foods.length]});
-    const next = index===35?summit:routePads[index+1]??summit;
-    const a: Anchor={id:`fly-${i}-b`,position:vec(next.position.x,top(next)+2.2,next.position.z),zone:p.zone,recovery:false,food:b.foods[i%b.foods.length]};
-    if (i<=2) a.position=vec(p.position.x+(i%2?1:-1)*1.45,p.position.y+3.2,p.position.z-.9);
+    // Keep the first meal just above the last landing where it can be caught
+    // before a deliberate swing. It no longer carries the frog to a distant,
+    // scripted arrival point. The rocks leave the basin center open below.
+    anchors.push({id:`fly-${i}-a`,position:vec(previous.x,previous.y+2.65,previous.z),zone:p.zone,recovery:false,food:b.foods[(i+1)%b.foods.length]});
+    // A second catch sits over this landing, so each route beat stays local
+    // and a miss can still be corrected with another deliberate swing.
+    const a: Anchor={id:`fly-${i}-b`,position:vec(p.position.x,top(p)+1.5,p.position.z),zone:p.zone,recovery:false,food:b.foods[i%b.foods.length]};
     if (b.foods.includes('bee')) a.motion={amplitude:vec(.32,.08,.2),period:3.5,phase:0};
     if (a.food==='pollen') a.motion={amplitude:vec(.16,.16,.12),period:4.5,phase:0};
     if (a.food==='moth') a.motion={amplitude:vec(.2,.2,.12),period:4,phase:0};
     anchors.push(a);
-    if(i<=2) { const id=`food-arrival-${i}`; anchors.push({id,position:vec(next.position.x,top(next)+2.2,next.position.z),zone:p.zone,recovery:false,food:b.foods[0]}); route[index].arrival=id; }
     previous=vec(p.position.x,top(p)+.4,p.position.z);
   }
   for(let zone=0;zone<7;zone++) {
@@ -110,10 +114,9 @@ export function makeEcosystem(): Course {
     relay.id=`food-crossing-${biomes[zone].id}`; relay.transition=true;
     route.find(r=>r.platform===last.id)!.launch=relay.id;
   }
-  anchors.find(a=>a.id==='fly-1-a')!.position=vec(start.x+(routePads[0].position.x-start.x)*.15,4.5,start.z+(routePads[0].position.z-start.z)*.15);
-  anchors.find(a=>a.id==='fly-1-b')!.position=vec(2.6,9,4.5);
-  anchors.find(a=>a.id==='fly-34-b')!.position=vec(-10.3,177.2,1.1);
-  anchors.find(a=>a.id==='fly-35-b')!.position=vec(summit.position.x-.8,top(summit)+1.2,summit.position.z-1);
+  // Keep the last two catches on their authored landings. The final summit
+  // approach has its own food so it doesn't pull a mid-route anchor away.
+  anchors.find(a=>a.id==='fly-36-b')!.position=vec(summit.position.x-.8,top(summit)+1.2,summit.position.z-1);
   const groundResolution=32, heights:number[]=[];
   for(let x=0;x<=groundResolution;x++) for(let z=0;z<=groundResolution;z++) {
     const lx=(x/groundResolution-.5)*28,lz=(z/groundResolution-.5)*28;

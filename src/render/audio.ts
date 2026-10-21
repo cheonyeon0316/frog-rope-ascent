@@ -14,10 +14,10 @@ export class Audio {
   play(e: GameEvent): void {
     if (e.type === 'touch') return;
     if (!this.context || !this.master || this.mute) return;
-    const map = { shoot: [530, 180, .07], catch: [820, 380, .1], recovery: [620, 960, .2], release: [410, 110, .1], eat: [330, 120, .22], dash: [680, 210, .12], miss: [180, 110, .06],
+    const map = { shoot: [530, 180, .07], catch: [820, 380, .1], recovery: [620, 960, .2], release: [410, 110, .1], eat: [330, 120, .22], swing: [880, 250, .15], miss: [180, 110, .06],
       blocked: [140, 90, .12], land: [120, 55, .12], fall: [240, 170, .13], reset: [120, 180, .2], summit: [440, 880, .5],
       'water-enter': [280, 520, .25], 'water-exit': [510, 270, .15], bounce: [160, 650, .2] };
-    const [a, b, duration] = e.type === 'dash' && e.reason === 'launch' ? [950, 220, .25] : map[e.type];
+    const [a, b, duration] = map[e.type];
     const now = this.context.currentTime;
     const osc = this.context.createOscillator(), gain = this.context.createGain();
     osc.type = e.type === 'land' ? 'triangle' : 'sine';

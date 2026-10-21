@@ -166,9 +166,9 @@ export class Interface {
     this.reticle.style.left = `${(pointer.x + 1) / 2 * 100}%`; this.reticle.style.top = `${(1 - pointer.y) / 2 * 100}%`;
     this.reticle.className = `reticle ${target ? 'valid' : ''} ${sim.attached ? 'attached' : ''}`;
     const button = device === 'pad' ? 'RT' : '왼쪽 버튼';
-    const launchButton = device === 'pad' ? 'A' : 'Space';
+    const swingButton = device === 'pad' ? 'A' : 'Space';
     const lookHint = device === 'pad' ? '오른쪽 스틱으로 시점' : '우클릭 드래그로 시점';
-    this.hint.textContent = grip ? `${button}을 다시 꾹 눌러 매달린 상태로 재개` : sim.attached ? `WASD 스윙 · ${launchButton} 먹고 강하게 대쉬 · ${lookHint}` : target ? `${target.transition ? '다음 생태계 · ' : ''}${FOOD_NAMES[target.food ?? 'fly']} · ${button}으로 혀 걸기` : sim.grounded ? 'Space로 점프 · 마우스로 먹이 조준 · 꾹 눌러 연결' : '마우스로 다음 먹이 조준 · 꾹 눌러 연결';
+    this.hint.textContent = grip ? `${button}을 다시 꾹 눌러 매달린 상태로 재개` : sim.attached ? `WASD 스윙 · ${swingButton} 먹기 스윙 · ${lookHint}` : target ? `${target.transition ? '다음 생태계 · ' : ''}${FOOD_NAMES[target.food ?? 'fly']} · ${button}으로 혀 걸기` : sim.grounded ? 'Space로 점프 · 마우스로 먹이 조준 · 꾹 눌러 연결' : '마우스로 다음 먹이 조준 · 꾹 눌러 연결';
     if (water && !grip && !sim.attached) this.hint.textContent = device === 'pad' ? 'A 꾹 수영↑ · B 수영↓ · 왼쪽 스틱 헤엄 · RT 먹이 연결' : 'Space 꾹 수영↑ · Shift 수영↓ · WASD 헤엄 · 먹이에 재연결';
     this.lookHint.textContent = water ? '물방울 밖의 파리를 관찰하고, 수면 위에서 다시 스윙하세요.' : 'WASD 이동·스윙 · Space 점프 · 우클릭 드래그 시점';
     if (performance.now() > this.toastUntil) this.toast.hidden = true;
@@ -179,8 +179,8 @@ export class Interface {
     this.root.dataset.biome = sim.biome?.id ?? '';
     this.root.dataset.swimming = String(!!water);
     this.root.dataset.activeTime = sim.time.toFixed(4);
-    this.root.dataset.dashing = String(!!sim.dash);
-    this.root.dataset.dashKind = sim.dash?.kind ?? '';
+    this.root.dataset.swinging = String(!!sim.impulse);
+    this.root.dataset.swingKind = sim.impulse?.kind ?? '';
     this.root.dataset.velocityX = sim.velocity.x.toFixed(3); this.root.dataset.velocityY = sim.velocity.y.toFixed(3); this.root.dataset.velocityZ = sim.velocity.z.toFixed(3);
   }
 }

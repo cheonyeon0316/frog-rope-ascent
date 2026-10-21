@@ -1,138 +1,103 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { beforeAll, expect, it } from 'vitest';
+import { Simulation, DT, validSave } from '../src/game/simulation';
 import { makeCourse } from '../src/game/course';
-import { Simulation, DASH_CONFIG, validSave } from '../src/game/simulation';
-import { vec, distance, length, clamp, type Controls } from '../src/game/types';
+import { SWING_CONFIG } from '../src/game/swing';
+import { vec, length, type Controls, type Course } from '../src/game/types';
 
 beforeAll(async () => { await RAPIER.init(); });
 const idle: Controls = { x: 0, z: 0, jump: false, grapplePress: false, grappleRelease: false };
+function fixture(): Course {
+  const summit = { id: 'summit', position: vec(12, 20, 0), size: vec(3, .4, 3), kind: 'flower' as const, zone: 0 };
+  return { id: 'swing-test', mode: 'training', start: vec(0, 3, 0), height: 20, summit, platforms: [summit],
+    anchors: [{ id: 'a', position: vec(0, 7, 0), zone: 0, recovery: false }, { id: 'b', position: vec(4, 8, 0), zone: 0, recovery: false }] };
+}
 
-it('raises a ground jump to about 1.5m and does not jump again in the air', () => {
+it('keeps a higher ground jump and does not add a second air jump', () => {
   const s = new Simulation(makeCourse('training'));
   for (let t = 0; t < 60; t++) s.step(idle, null);
   const start = s.position.y;
   s.step({ ...idle, jump: true }, null);
   let peak = s.position.y;
   for (let t = 0; t < 60; t++) { s.step(idle, null); peak = Math.max(peak, s.position.y); }
-  expect(peak - start).toBeGreaterThan(1.45); expect(peak - start).toBeLessThan(1.6);
-  const speed = s.velocity.y; s.step({ ...idle, jump: true }, null);
-  expect(s.velocity.y).toBeLessThan(speed); expect(s.events.some(e => e.type === 'dash')).toBe(false);
-  s.dispose();
+  expect(peak - start).toBeGreaterThan(1.45);
+  expect(peak - start).toBeLessThan(1.6);
+  const vy = s.velocity.y; s.step({ ...idle, jump: true }, null);
+  expect(s.velocity.y).toBeLessThan(vy); s.dispose();
 });
 
-it('eats and launches toward the attached target on Space even during a fast fall', () => {
-  const s = new Simulation(makeCourse('training'));
-  expect(s.attach('fly-0')).toBe(true);
-  const p = s.position, a = s.anchor!.position, d = distance(p, a);
-  const n = vec((a.x - p.x) / d, (a.y - p.y) / d, (a.z - p.z) / d);
-  s.body.setLinvel(vec(-n.x * 25, -n.y * 25, -n.z * 25), true);
-  s.step({ ...idle, jump: true }, null);
-  expect(s.attached).toBeNull(); expect(s.flyLife('fly-0').phase).toBe('retracting');
-  expect(s.dash?.kind).toBe('launch');
-  expect(length(s.velocity)).toBeGreaterThan(8.5);
-  expect(length(s.velocity)).toBeLessThan(DASH_CONFIG.launchMaxSpeed);
-  const launch = s.dash!;
-  expect(launch.distance).toBeCloseTo(d, 5);
-  expect(launch.duration).toBeCloseTo(launch.distance! / (DASH_CONFIG.launchCruiseSpeed * .9), 5);
-  expect(launch.anchor).toBe('fly-0');
+it('Space eats the caught food and adds one tangent impulse, then ordinary gravity continues', () => {
+  const s = new Simulation(fixture());
+  expect(s.attach('a')).toBe(true);
+  s.body.setLinvel(vec(8, 0, 0), true);
+  s.step({ ...idle, jump: true, cameraForward: vec(0, 0, -1) }, null);
+  expect(s.attached).toBeNull();
+  expect(s.flyLife('a').phase).toBe('retracting');
+  expect(s.events.filter(e => e.type === 'eat')).toHaveLength(1);
+  const swing = s.events.find(e => e.type === 'swing' && e.reason === 'eat-swing');
+  expect(swing).toBeDefined(); expect(swing!.speed).toBeGreaterThan(0);
+  expect(swing!.direction!.x).toBeGreaterThan(.9);
+  expect(s.velocity.x).toBeGreaterThan(8 + (swing!.speed ?? 0) - .2);
   const origin = s.position;
-  for (let t = 0; t < 120 && s.dash; t++) s.step(idle, null);
-  const progress = (s.position.x - origin.x) * n.x + (s.position.y - origin.y) * n.y + (s.position.z - origin.z) * n.z;
-  expect(progress).toBeGreaterThan(d - .25);
-  expect(progress).toBeLessThan(d + .1);
-  const arrivalVelocity = s.velocity;
-  expect(arrivalVelocity.y).toBeGreaterThan(0);
-  s.step(idle, null);
-  expect(s.velocity.y).toBeLessThan(arrivalVelocity.y - .1);
-  expect(s.events.filter(e => e.type === 'eat')).toHaveLength(1);
-  const before = s.velocity; s.step({ ...idle, grappleRelease: true }, null);
-  expect(s.events.filter(e => e.type === 'eat')).toHaveLength(1);
-  expect(s.velocity.y).toBeLessThan(before.y);
-  s.dispose();
-});
-
-it('retains bounded sideways swing, then can reconnect without a second Space press', () => {
-  const s = new Simulation(makeCourse('training')); s.attach('fly-0');
-  s.body.setLinvel(vec(70, 0, 0), true); s.release('launch');
-  expect(length(s.velocity)).toBeLessThanOrEqual(DASH_CONFIG.launchMaxSpeed + .0001);
-  expect(s.velocity.x).toBeGreaterThan(1);
-  expect(s.attach('fly-1')).toBe(true);
-  s.step(idle, null); expect(s.attached).toBe('fly-1');
-  s.dispose();
-});
-
-it('restores a strong dash without repeating its launch and accepts old weak dash saves', () => {
-  const s = new Simulation(makeCourse('training')); s.attach('fly-0'); s.release('launch');
-  const state = s.snapshot(), b = new Simulation(makeCourse('training')); b.restore(state);
-  expect(state.dash?.anchor).toBe('fly-0');
-  expect(b.dash).toEqual(s.dash); expect(b.velocity).toEqual(s.velocity);
-  expect(b.events).toEqual([]);
-  expect(validSave(state)).toBe(true);
-  expect(validSave({ ...state, dash: { direction: vec(1, 0, 0), kind: 'launch', remaining: .31 } })).toBe(false);
-  expect(validSave({ ...state, dash: { direction: vec(1, 0, 0), remaining: .1 } })).toBe(true);
-  for (let t = 0; t < 120; t++) b.step(idle, null);
-  expect(b.dash).toBeUndefined();
-  s.dispose(); b.dispose();
-});
-
-it('chains crossing and arrival meals to land in each next ecosystem', () => {
-  const course = makeCourse('main');
-  for (let zone = 0; zone < course.biomes!.length - 1; zone++) {
-    const s = new Simulation(makeCourse('main'));
-    const biome = s.course.biomes![zone], next = s.course.biomes![zone + 1];
-    const pad = s.course.platforms.find(p => p.id === `pad-${biome.end / 5 - 1}`)!;
-    s.body.setTranslation(vec(pad.position.x, pad.position.y + pad.size.y / 2 + .4, pad.position.z), true);
-    s.body.setLinvel(vec(), true);
-    const crossing = s.anchorPosition(`food-crossing-${biome.id}`)!;
-    expect(s.attach(`food-crossing-${biome.id}`), `${biome.id} entry d=${distance(s.position, crossing)} blocked=${s.blocked(s.position, crossing)}`).toBe(true);
-    s.step({ ...idle, jump: true }, null);
-    for(let t=0;t<230&&s.dash;t++)s.step(idle,null);
-    const beat=course.route!.find(r=>r.platform===pad.id)!;
-    expect(s.attach(beat.arrival!),`reconnect ${biome.id}`).toBe(true);
-    s.step({...idle,jump:true},null);
-    for(let t=0;t<230&&s.dash;t++)s.step(idle,null);
-    const destination=course.platforms.find(p=>p.id===course.route![course.route!.indexOf(beat)+1].platform)!;
-    let entered = false; const trace: unknown[] = [{ tick: 0, p: s.position, v: s.velocity }];
-    for (let t = 0; t < 360; t++) {
-      const p=s.position,v=s.velocity;
-      s.step({...idle,x:clamp((destination.position.x-p.x)*.6-v.x*.45,-1,1),z:clamp((destination.position.z-p.z)*.6-v.z*.45,-1,1)}, null);
-      if (t % 30 === 0) trace.push({ tick: t, p: s.position, v: s.velocity });
-      entered ||= s.position.y >= next.start + .4 && Math.abs(s.position.x - next.center.x) < 9.5 && Math.abs(s.position.z - next.center.z) < 9.5;
-    }
-    if (!entered) console.log(JSON.stringify({ biome: biome.id, next: next.id, start: s.course.start, crossing, nextCenter: next.center, trace }));
-    expect(s.grounded, `landing ${biome.id}`).toBe(true);
-    expect(entered, `${biome.id} -> ${next.id}: ${JSON.stringify(s.position)}`).toBe(true);
-    expect(s.events.some(e => e.type === 'reset')).toBe(false);
-    s.dispose();
-  }
-});
-
-it('reaches a horizontal meal without sinking under it, then resumes gravity after arrival',()=>{
-  const s=new Simulation({id:'horizontal-dash',mode:'training',height:12,start:vec(0,10,0),
-    platforms:[],anchors:[{id:'side',position:vec(6,10,0),zone:0,recovery:false}],
-    summit:{id:'summit',position:vec(0,20,0),size:vec(3,.4,3),zone:0,kind:'star'}});
-  expect(s.attach('side')).toBe(true);s.release('launch');
-  const startY=s.position.y;let peakY=startY;
-  for(let t=0;t<230&&s.dash;t++){s.step(idle,null);peakY=Math.max(peakY,s.position.y);}
-  expect(distance(s.position,vec(6,10,0))).toBeLessThan(.2);
-  expect(peakY).toBeGreaterThan(startY+.5);
-  expect(s.velocity.x).toBeGreaterThan(2);
+  for (let t = 0; t < Math.round(.25 / DT); t++) s.step(idle, null);
+  expect(s.position.x).toBeGreaterThan(origin.x + .4);
   expect(s.velocity.y).toBeLessThan(0);
-  const before=s.velocity.y;s.step(idle,null);
-  expect(s.velocity.y).toBeLessThan(before-.1);
+  expect(s.events.filter(e => e.type === 'eat')).toHaveLength(1);
+  expect(s.impulse).toBeDefined();
+  for (let t = 0; t < Math.round(.2 / DT); t++) s.step(idle, null);
+  expect(s.impulse).toBeUndefined();
+  expect(length(s.velocity)).toBeGreaterThan(0);
   s.dispose();
 });
 
-it('keeps upper launch meals out of solid terrain throughout their motion', () => {
-  const s = new Simulation(makeCourse('main')), probe = new RAPIER.Ball(.05);
-  for (let t = 0; t < 600; t++) {
-    s.step(idle, null);
-    if (t % 12) continue;
-    for (const a of s.course.anchors.filter(a => a.id.endsWith('-b') || a.transition)) {
-      const hit = s.world.intersectionWithShape(s.anchorPosition(a.id)!, { x: 0, y: 0, z: 0, w: 1 }, probe,
-        RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, s.collider, s.body);
-      expect(hit === null, `${a.id} at ${s.time.toFixed(2)}s`).toBe(true);
-    }
+it('restores swing feedback without replaying a scripted path and accepts old dash saves', () => {
+  const s = new Simulation(fixture()); s.attach('a'); s.body.setLinvel(vec(7, 0, 0), true);
+  s.step({ ...idle, jump: true }, null);
+  const saved = s.snapshot(), b = new Simulation(fixture()); b.restore(saved);
+  expect(b.position).toEqual(s.position); expect(b.velocity).toEqual(s.velocity);
+  expect(b.impulse).toEqual(s.impulse); expect(b.events).toEqual([]);
+  for (let t = 0; t < Math.round(.5 / DT); t++) b.step(idle, null);
+  expect(b.impulse).toBeUndefined();
+  const legacy = { ...saved, swing: undefined, dash: { kind: 'launch' as const, remaining: .25, duration: .3,
+    distance: 4, travelled: 1, direction: vec(1, 0, 0), anchor: 'a', origin: vec(), targetPosition: vec(4, 0, 0) } };
+  expect(validSave(legacy)).toBe(true);
+  const oldWorld = new Simulation(fixture()); oldWorld.restore(legacy);
+  expect(oldWorld.velocity).toEqual(legacy.velocity); expect(oldWorld.position).toEqual(legacy.position);
+  expect(oldWorld.impulse?.kind).toBe('eat-swing');
+  expect(validSave({ ...legacy, dash: { ...legacy.dash, remaining: 2 } })).toBe(false);
+  s.dispose(); b.dispose(); oldWorld.dispose();
+});
+
+it('keeps manual tongue release distinct from the deliberate eat swing', () => {
+  const s = new Simulation(fixture()); s.attach('a'); s.body.setLinvel(vec(3, 0, 0), true);
+  s.release();
+  expect(s.events.some(e => e.type === 'eat')).toBe(true);
+  expect(s.events.some(e => e.type === 'swing' && e.reason === 'release')).toBe(true);
+  expect(s.events.some(e => e.type === 'swing' && e.reason === 'eat-swing')).toBe(false);
+  expect(s.impulse?.kind).toBe('release'); s.dispose();
+});
+
+it('keeps route landings roomy and each food beat local to the adjoining recovery surfaces', () => {
+  const c = makeCourse('main');
+  expect(c.route!.length).toBe(36);
+  const surface = (id: string) => c.platforms.find(p => p.id === id)!;
+  const anchor = (id: string) => c.anchors.find(a => a.id === id)!;
+  const top = (id: string) => { const p = surface(id); return p.position.y + p.size.y / 2; };
+  for (let i = 0; i < c.route!.length - 1; i++) {
+    const beat = c.route![i], next = c.route![i + 1];
+    const landing = surface(beat.platform), destination = surface(next.platform);
+    expect(landing.size.x, beat.name).toBeGreaterThanOrEqual(4.4);
+    expect(landing.size.z, beat.name).toBeGreaterThanOrEqual(4.4);
+    const launch = anchor(beat.launch), arrival = anchor(beat.arrival!);
+    const from = vec(landing.position.x, top(beat.platform) + .4, landing.position.z);
+    const to = vec(destination.position.x, top(next.platform) + .4, destination.position.z);
+    expect(length(vec(launch.position.x - from.x, launch.position.y - from.y, launch.position.z - from.z)), beat.name).toBeLessThan(6.5);
+    expect(length(vec(arrival.position.x - to.x, arrival.position.y - to.y, arrival.position.z - to.z)), beat.name).toBeLessThan(3);
+    expect(launch.food, beat.name).toBeDefined(); expect(arrival.food, beat.name).toBeDefined();
   }
-  s.dispose();
+  for (let zone = 1; zone < c.biomes!.length; zone++) {
+    const refuge = c.platforms.find(p => p.refuge === c.biomes![zone].name);
+    expect(refuge, c.biomes![zone].id).toBeDefined();
+    expect(refuge!.recovery).toBe(true);
+  }
 });

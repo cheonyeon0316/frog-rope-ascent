@@ -1,26 +1,14 @@
 import RAPIER from '@dimforge/rapier3d-compat';
-import { vec, length, distance, clamp, type Vec, type Course, type Controls, type Anchor, type GameEvent, type SaveState, type FlyLife, type DashState } from './types';
+import { vec, length, distance, clamp, type Vec, type Course, type Controls, type Anchor, type GameEvent, type SaveState, type FlyLife, type ImpulseState, type LegacyDashState } from './types';
 import { movingAnchorPosition, waterAt, WATER_CONFIG, rockHull, cylinderRotation, landscapeMesh, starMesh, cloudClumps, platformMesh, platformRotation } from './environment';
+import { calculateEatSwingKick, SWING_CONFIG } from './swing';
 
 export const DT = 1 / 120;
 export const CONFIG = { gravity: 18, range: 10, minRange: .75, aimAngle: 8, swingAccel: 12, airAccel: 2.5, inputSpeed: 14, jump: 7.5 };
 export const FLY_TIMING = { retract: .32, swallow: .22, respawn: 3, appear: .25 };
-export const DASH_CONFIG = { boost: 3.5, duration: .16, maxBoostedSpeed: 16, launchSpeed: 8, launchDuration: .3, launchMinDuration: .1, launchMaxDuration: 1.7, launchCruiseSpeed: 7.2, launchArrivalSpeed: 3, launchBrakeStart: .68, launchMaxSpeed: 16 };
+export const RELEASE_CONFIG = { boost: 3.5, duration: .16, maxBoostedSpeed: 16 };
+const LEGACY_LAUNCH_SAVE = { duration: .3, minDuration: .1, maxDuration: 1.7 };
 const copy = (p: Vec): Vec => vec(p.x, p.y, p.z);
-function launchCurve(t: number, duration: number, distance: number) {
-  const start = DASH_CONFIG.launchSpeed * duration / distance;
-  const end = DASH_CONFIG.launchArrivalSpeed * duration / distance;
-  const a = -2 + start + end, b = 3 - 2 * start - end, c = start;
-  const progress = ((a * t + b) * t + c) * t;
-  return { progress, rate: (3 * a * t * t + 2 * b * t + c) / duration };
-}
-function launchPathVelocity(origin: Vec, destination: Vec, t: number, duration: number, distance: number): Vec {
-  const { progress, rate } = launchCurve(t, duration, distance);
-  const arc = clamp(distance * .12, .3, 1.1);
-  return vec((destination.x - origin.x) * rate,
-    (destination.y - origin.y) * rate + 4 * arc * (1 - 2 * progress) * rate,
-    (destination.z - origin.z) * rate);
-}
 
 export class Simulation {
   readonly world: RAPIER.World;
@@ -33,16 +21,10 @@ export class Simulation {
   private surfaces = new Map<number, Course['platforms'][number]>();
   private footProbe = new RAPIER.Ball(.28);
   private eatenFlies = new Map<string, number>();
-  private dashUntil = 0;
-  private dashDirection = vec();
-  private dashKind: 'release' | 'launch' = 'release';
-  private launchDistance = 0;
-  private launchTravelled = 0;
-  private launchElapsed = 0;
-  private launchDuration = DASH_CONFIG.launchDuration;
-  private launchStart: Vec | null = null;
-  private launchEnd: Vec | null = null;
-  private launchTarget: string | null = null;
+  private impulseUntil = 0;
+  private impulseDirection = vec();
+  private impulseKind: ImpulseState['kind'] = 'release';
+  private impulseDuration = RELEASE_CONFIG.duration;
   private previousWater: string | null = null;
   private anchorPhases = new Map<string, number>();
   readonly events: GameEvent[] = [];
@@ -167,11 +149,9 @@ export class Simulation {
   }
   anchorPosition(id: string): Vec | null { const a = this.anchors.get(id); return a ? copy(a.body.translation()) : null; }
   get water() { return waterAt(this.position, this.course.waters); }
-  get dash(): DashState | undefined {
-    const remaining = this.dashUntil - this.time;
-    return remaining > 0 ? { remaining, direction: copy(this.dashDirection), kind: this.dashKind,
-      ...(this.dashKind === 'launch' && this.launchDistance > 0 ? { duration: this.launchDuration, distance: this.launchDistance, travelled: this.launchTravelled, anchor: this.launchTarget ?? undefined,
-        ...(this.launchStart && this.launchEnd ? { origin: copy(this.launchStart), targetPosition: copy(this.launchEnd) } : {}) } : {}) } : undefined;
+  get impulse(): ImpulseState | undefined {
+    const remaining = this.impulseUntil - this.time;
+    return remaining > 0 ? { remaining, direction: copy(this.impulseDirection), kind: this.impulseKind, duration: this.impulseDuration } : undefined;
   }
 
   flyLife(id: string): FlyLife {
@@ -220,44 +200,44 @@ export class Simulation {
     return true;
   }
 
-  release(reason: 'manual' | 'launch' | 'blocked' | 'reset' | 'restore' = 'manual', duringStep = false): void {
+  release(reason: 'manual' | 'eat-swing' | 'blocked' | 'reset' | 'restore' = 'manual', duringStep = false, controls?: Controls): void {
     if (!this.joint) return;
+    const anchorId = this.attached;
     const fly = this.anchor;
-    // Removing the rope preserves swing velocity. Only a deliberate eat adds a short impulse.
     this.world.removeImpulseJoint(this.joint, true);
     this.joint = null;
-    this.events.push({ type: reason === 'blocked' ? 'blocked' : 'release', position: this.position, anchor: this.attached ?? undefined });
-    if ((reason === 'manual' || reason === 'launch') && this.attached) {
-      this.eatenFlies.set(this.attached, this.time + FLY_TIMING.respawn);
-      this.events.push({ type: 'eat', position: this.position, anchor: this.attached });
+    this.events.push({ type: reason === 'blocked' ? 'blocked' : 'release', position: this.position, anchor: anchorId ?? undefined });
+    if ((reason === 'manual' || reason === 'eat-swing') && anchorId) {
+      this.eatenFlies.set(anchorId, this.time + FLY_TIMING.respawn);
+      this.events.push({ type: 'eat', position: this.position, anchor: anchorId });
       if (fly) {
         const p = this.position, v = this.velocity, d = distance(p, fly.position);
         if (d > .001) {
           const n = vec((fly.position.x - p.x) / d, (fly.position.y - p.y) / d, (fly.position.z - p.z) / d);
-          const speed = length(v), toward = v.x * n.x + v.y * n.y + v.z * n.z;
-          if (reason === 'launch') {
-            // Use a quick, shallow arc with a soft arrival speed. The curved path reads
-            // as a tongue-led leap without suspending the frog on a straight rail.
-            const flightTime = clamp(d / (DASH_CONFIG.launchCruiseSpeed * .9), DASH_CONFIG.launchMinDuration, DASH_CONFIG.launchMaxDuration);
-            const destination = copy(fly.position);
-            const launchVelocity = launchPathVelocity(p, destination, 0, flightTime, d);
-            const launchSpeed = length(launchVelocity);
-            this.body.setLinvel(launchVelocity, true);
-            this.dashKind = 'launch'; this.dashDirection = vec(launchVelocity.x / launchSpeed, launchVelocity.y / launchSpeed, launchVelocity.z / launchSpeed); this.dashUntil = this.time + flightTime - (duringStep ? DT : 0);
-            this.launchDistance = d; this.launchTravelled = 0; this.launchElapsed = 0; this.launchDuration = flightTime;
-            this.launchStart = copy(p); this.launchEnd = destination; this.launchTarget = this.attached;
-            this.events.push({ type: 'dash', position: p, anchor: this.attached, speed: launchSpeed, reason: 'launch' });
+          if (reason === 'eat-swing') {
+            const kick = calculateEatSwingKick(v, vec(fly.position.x - p.x, fly.position.y - p.y, fly.position.z - p.z),
+              vec(controls?.x ?? 0, 0, controls?.z ?? 0), controls?.cameraForward ?? vec(0, 0, -1));
+            if (kick.speedDelta > .001) {
+              const mass = this.body.mass();
+              this.body.applyImpulse(vec(kick.direction.x * kick.speedDelta * mass, kick.direction.y * kick.speedDelta * mass,
+                kick.direction.z * kick.speedDelta * mass), true);
+              this.impulseKind = 'eat-swing'; this.impulseDirection = kick.direction; this.impulseDuration = SWING_CONFIG.duration;
+              this.impulseUntil = this.time + SWING_CONFIG.duration - (duringStep ? DT : 0);
+              this.events.push({ type: 'swing', position: p, anchor: anchorId, speed: kick.speedDelta, reason: 'eat-swing', direction: kick.direction });
+            }
           } else {
-            // Bound added energy without cutting an existing high-speed fall or swing.
-            const limit = Math.max(DASH_CONFIG.maxBoostedSpeed, speed);
+            // Manual tongue release retains its gentler food-side nudge. Existing fast
+            // falls and swings are preserved; only the added work is limited.
+            const speed = length(v), toward = v.x * n.x + v.y * n.y + v.z * n.z;
+            const limit = Math.max(RELEASE_CONFIG.maxBoostedSpeed, speed);
             const budget = Math.max(0, -toward + Math.sqrt(toward * toward + Math.max(0, limit * limit - speed * speed)));
-            const boost = Math.min(DASH_CONFIG.boost, budget);
+            const boost = Math.min(RELEASE_CONFIG.boost, budget);
             if (boost > .001) {
               const mass = this.body.mass();
               this.body.applyImpulse(vec(n.x * boost * mass, n.y * boost * mass, n.z * boost * mass), true);
-              this.dashKind = 'release';
-              this.dashDirection = n; this.dashUntil = this.time + DASH_CONFIG.duration;
-              this.events.push({ type: 'dash', position: p, anchor: this.attached, speed: boost });
+              this.impulseKind = 'release'; this.impulseDirection = n; this.impulseDuration = RELEASE_CONFIG.duration;
+              this.impulseUntil = this.time + RELEASE_CONFIG.duration - (duringStep ? DT : 0);
+              this.events.push({ type: 'swing', position: p, anchor: anchorId, speed: boost, reason: 'release', direction: n });
             }
           }
         }
@@ -293,10 +273,10 @@ export class Simulation {
     for (const [id, sensor] of this.anchorTouchSensors) sensor.setEnabled(this.flyLife(id).phase !== 'hidden');
     this.grounded = this.probeGround();
     this.coyote = this.grounded ? .08 : Math.max(0, this.coyote - DT);
-    const launch = input.jump && !!this.attached;
-    if (launch) { this.release('launch', true); this.jumpBuffer = 0; this.coyote = 0; }
+    const eatSwing = input.jump && !!this.attached;
+    if (eatSwing) { this.release('eat-swing', true, input); this.jumpBuffer = 0; this.coyote = 0; }
     else this.jumpBuffer = input.jump ? .08 : Math.max(0, this.jumpBuffer - DT);
-    // Resolve a ground jump first so a simultaneous eat-dash adds to it instead of being overwritten.
+    // A tethered Space press eats and swings; a grounded Space press jumps.
     if (this.jumpBuffer > 0 && this.coyote > 0) {
       this.body.setLinvel(vec(this.velocity.x, CONFIG.jump, this.velocity.z), true);
       this.coyote = 0; this.jumpBuffer = 0;
@@ -329,38 +309,21 @@ export class Simulation {
         impulse = vec(impulse.x - v.x * k, impulse.y - v.y * k, impulse.z - v.z * k);
       }
       this.body.applyImpulse(vec(impulse.x * mass * DT, impulse.y * mass * DT, impulse.z * mass * DT), true);
-    } else if (this.launchDistance > 0 && this.dashUntil > this.time) {
-      // A target dash is committed to its arcing path; air steering resumes at arrival.
     } else if (water) {
-      const gain = clamp((this.dash ? 1.5 : WATER_CONFIG.drag) * water.immersion * DT, 0, 1);
+      const gain = clamp((this.impulse ? 1.5 : WATER_CONFIG.drag) * water.immersion * DT, 0, 1);
       this.body.applyImpulse(vec((ix * WATER_CONFIG.moveSpeed - v.x) * gain * mass, 0, (iz * WATER_CONFIG.moveSpeed - v.z) * gain * mass), true);
-    } else if (this.grounded && !this.dash) {
+    } else if (this.grounded && !this.impulse) {
       const gain = clamp(24 * DT, 0, 1);
       this.body.applyImpulse(vec((ix * 4.5 - v.x) * gain * mass, 0, (iz * 4.5 - v.z) * gain * mass), true);
     } else this.body.applyImpulse(vec(ix * CONFIG.airAccel * mass * DT, 0, iz * CONFIG.airAccel * mass * DT), true);
     if (water) {
       const swim = clamp(input.swim ?? 0, -1, 1);
       const desired = swim > 0 ? swim * WATER_CONFIG.riseSpeed : swim < 0 ? swim * WATER_CONFIG.diveSpeed : WATER_CONFIG.floatSpeed;
-      const lift = CONFIG.gravity * water.immersion + (desired - this.velocity.y) * (this.dash ? 1.5 : WATER_CONFIG.drag) * water.immersion;
+      const lift = CONFIG.gravity * water.immersion + (desired - this.velocity.y) * (this.impulse ? 1.5 : WATER_CONFIG.drag) * water.immersion;
       this.body.applyImpulse(vec(0, lift * mass * DT, 0), true);
     }
-    if (this.launchDistance > 0 && this.launchStart && this.launchEnd && this.dashUntil > this.time) {
-      const t = clamp(this.launchElapsed / this.launchDuration, 0, 1);
-      const pathVelocity = launchPathVelocity(this.launchStart, this.launchEnd, t, this.launchDuration, this.launchDistance);
-      // Rapier applies gravity this step; offset it to keep the authored arc stable,
-      // then hand full gravity back as soon as the target is reached.
-      this.body.setLinvel(vec(pathVelocity.x, pathVelocity.y + CONFIG.gravity * DT, pathVelocity.z), true);
-    }
     this.world.step();
-    if (this.launchDistance > 0) {
-      this.launchElapsed = Math.min(this.launchDuration, this.launchElapsed + DT);
-      const t = clamp(this.launchElapsed / this.launchDuration, 0, 1);
-      this.launchTravelled = this.launchDistance * launchCurve(t, this.launchDuration, this.launchDistance).progress;
-      if (this.dashUntil <= this.time) {
-        this.dashUntil = 0; this.launchDistance = 0; this.launchTravelled = 0; this.launchElapsed = 0;
-        this.launchStart = null; this.launchEnd = null; this.launchTarget = null;
-      }
-    }
+    if (this.impulseUntil <= this.time) this.impulseUntil = 0;
     const touching = new Set<string>();
     for (const [id, sensor] of this.anchorTouchSensors) {
       if (id === this.attached || this.flyLife(id).phase === 'hidden') continue;
@@ -410,9 +373,7 @@ export class Simulation {
     this.body.setTranslation(this.course.start, true);
     this.body.setLinvel(vec(), true);
     this.coyote = 0; this.jumpBuffer = 0; this.fallHold = 0; this.falling = false; this.landingHold = 0;
-    this.dashUntil = 0; this.dashDirection = vec(); this.dashKind = 'release';
-    this.launchDistance = 0; this.launchTravelled = 0; this.launchElapsed = 0; this.launchDuration = DASH_CONFIG.launchDuration;
-    this.launchStart = null; this.launchEnd = null; this.launchTarget = null;
+    this.impulseUntil = 0; this.impulseDirection = vec(); this.impulseKind = 'release'; this.impulseDuration = RELEASE_CONFIG.duration;
     this.previousWater = null;
     this.events.push({ type: 'reset', position: this.position });
   }
@@ -421,7 +382,7 @@ export class Simulation {
     return { version: 1, course: this.course.id, mode: this.course.mode, position: this.position, velocity: this.velocity,
       attached: this.attached, length: this.ropeLength, peak: this.peak, time: this.time, tick: this.tick, falls: this.falls, finished: this.finished,
       eatenFlies: [...this.eatenFlies].filter(([, until]) => until > this.time).map(([id, until]) => ({ id, remaining: until - this.time })),
-      dash: this.dash, anchorPhases: [...this.anchorPhases].map(([id, time]) => ({ id, time })) };
+      swing: this.impulse, anchorPhases: [...this.anchorPhases].map(([id, time]) => ({ id, time })) };
   }
 
   restore(s: SaveState): void {
@@ -441,16 +402,17 @@ export class Simulation {
     this.touchingAnchors.clear();
     this.body.setTranslation(s.position, true);
     this.body.setLinvel(s.velocity, true);
-    this.dashUntil = s.time + (s.dash?.remaining ?? 0);
-    this.dashDirection = s.dash ? copy(s.dash.direction) : vec();
-    this.dashKind = s.dash?.kind ?? 'release';
-    this.launchDistance = s.dash?.distance ?? 0;
-    this.launchTravelled = s.dash?.travelled ?? 0;
-    this.launchDuration = s.dash?.duration ?? DASH_CONFIG.launchDuration;
-    this.launchElapsed = this.launchDistance > 0 && s.dash ? this.launchDuration - s.dash.remaining : 0;
-    this.launchStart = s.dash?.origin ? copy(s.dash.origin) : null;
-    this.launchEnd = s.dash?.targetPosition ? copy(s.dash.targetPosition) : null;
-    this.launchTarget = s.dash?.anchor ?? null;
+    const legacyDash = s.dash;
+    const restoredImpulse = s.swing ?? (legacyDash ? {
+      remaining: legacyDash.kind === 'launch' ? Math.min(legacyDash.remaining, SWING_CONFIG.duration) : legacyDash.remaining,
+      duration: legacyDash.kind === 'launch' ? SWING_CONFIG.duration : RELEASE_CONFIG.duration,
+      direction: legacyDash.direction,
+      kind: legacyDash.kind === 'launch' ? 'eat-swing' as const : 'release' as const,
+    } : undefined);
+    this.impulseUntil = s.time + (restoredImpulse?.remaining ?? 0);
+    this.impulseDirection = restoredImpulse ? copy(restoredImpulse.direction) : vec();
+    this.impulseKind = restoredImpulse?.kind ?? 'release';
+    this.impulseDuration = restoredImpulse?.duration ?? RELEASE_CONFIG.duration;
     if (s.attached) {
       const a = this.anchors.get(s.attached);
       if (!a) throw new Error('저장된 파리를 찾을 수 없습니다.');
@@ -470,17 +432,28 @@ export function validSave(s: unknown): s is SaveState {
   if (!s || typeof s !== 'object') return false;
   const p = s as SaveState;
   const v = (x: Vec) => x && [x.x, x.y, x.z].every(Number.isFinite);
-  if (p.dash !== undefined && (!p.dash || !Number.isFinite(p.dash.remaining) || p.dash.remaining <= 0
-    || p.dash.remaining > (p.dash.kind === 'launch' ? (p.dash.duration ?? DASH_CONFIG.launchDuration) : DASH_CONFIG.duration) + 1e-9
-    || p.dash.distance !== undefined && (!Number.isFinite(p.dash.distance) || p.dash.distance <= 0 || p.dash.distance > CONFIG.range + 1e-6)
-    || p.dash.travelled !== undefined && (!Number.isFinite(p.dash.travelled) || p.dash.travelled < 0 || p.dash.distance === undefined || p.dash.travelled > p.dash.distance + 1e-6)
-    || p.dash.duration !== undefined && (!Number.isFinite(p.dash.duration) || p.dash.duration < DASH_CONFIG.launchMinDuration || p.dash.duration > DASH_CONFIG.launchMaxDuration)
-    || p.dash.anchor !== undefined && (p.dash.kind !== 'launch' || typeof p.dash.anchor !== 'string')
-    || p.dash.origin !== undefined && (p.dash.kind !== 'launch' || !v(p.dash.origin))
-    || p.dash.targetPosition !== undefined && (p.dash.kind !== 'launch' || !v(p.dash.targetPosition))
-    || (p.dash.origin === undefined) !== (p.dash.targetPosition === undefined)
-    || p.dash.kind !== undefined && !['release', 'launch'].includes(p.dash.kind)
-    || !v(p.dash.direction) || Math.abs(length(p.dash.direction) - 1) > .001)) return false;
+  const validLegacyDash = (dash: LegacyDashState) => {
+    if (!dash || !Number.isFinite(dash.remaining) || dash.remaining <= 0
+      || dash.kind !== undefined && !['release', 'launch'].includes(dash.kind)
+      || !v(dash.direction) || Math.abs(length(dash.direction) - 1) > .001) return false;
+    if (dash.kind === 'launch') {
+      const duration = dash.duration ?? LEGACY_LAUNCH_SAVE.duration;
+      return Number.isFinite(duration) && duration >= LEGACY_LAUNCH_SAVE.minDuration && duration <= LEGACY_LAUNCH_SAVE.maxDuration
+        && dash.remaining <= duration + 1e-9
+        && (dash.distance === undefined || Number.isFinite(dash.distance) && dash.distance > 0 && dash.distance <= CONFIG.range + 1e-6)
+        && (dash.travelled === undefined || Number.isFinite(dash.travelled) && dash.travelled >= 0 && dash.distance !== undefined && dash.travelled <= dash.distance + 1e-6)
+        && (dash.anchor === undefined || typeof dash.anchor === 'string')
+        && (dash.origin === undefined || v(dash.origin)) && (dash.targetPosition === undefined || v(dash.targetPosition))
+        && ((dash.origin === undefined) === (dash.targetPosition === undefined));
+    }
+    return dash.remaining <= RELEASE_CONFIG.duration + 1e-9 && dash.duration === undefined && dash.distance === undefined
+      && dash.travelled === undefined && dash.anchor === undefined && dash.origin === undefined && dash.targetPosition === undefined;
+  };
+  if (p.dash !== undefined && !validLegacyDash(p.dash)) return false;
+  if (p.swing !== undefined && (!p.swing || !Number.isFinite(p.swing.remaining) || p.swing.remaining <= 0
+    || !Number.isFinite(p.swing.duration) || p.swing.duration !== (p.swing.kind === 'eat-swing' ? SWING_CONFIG.duration : RELEASE_CONFIG.duration)
+    || p.swing.remaining > p.swing.duration + 1e-9 || !['release', 'eat-swing'].includes(p.swing.kind)
+    || !v(p.swing.direction) || Math.abs(length(p.swing.direction) - 1) > .001)) return false;
   const flies = p.eatenFlies;
   const phases = p.anchorPhases;
   if (phases !== undefined && (!Array.isArray(phases) || phases.length > 200 || phases.some(phase => !phase || typeof phase.id !== 'string'

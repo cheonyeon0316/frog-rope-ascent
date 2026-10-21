@@ -107,7 +107,8 @@ export class Input {
     const side = Number(this.keys.has('KeyD') || this.keys.has('ArrowRight')) - Number(this.keys.has('KeyA') || this.keys.has('ArrowLeft')) + this.stick.x;
     const fwd = Number(this.keys.has('KeyW') || this.keys.has('ArrowUp')) - Number(this.keys.has('KeyS') || this.keys.has('ArrowDown')) + this.stick.z;
     const event = this.events.shift();
-    const result: Controls = { ...cameraRelativeAxes(side, fwd, yaw),
+    const forward = cameraRelativeAxes(0, 1, yaw);
+    const result: Controls = { ...cameraRelativeAxes(side, fwd, yaw), cameraForward: { ...forward, y: 0 },
       jump: this.jump, grapplePress: event === 'press' && !(this.toggle && attached), grappleRelease: event === 'release' || event === 'press' && this.toggle && attached };
     result.swim = Number(this.keys.has('Space') || this.padJump) - Number(this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.padDive);
     this.jump = false;

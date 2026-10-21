@@ -12,16 +12,19 @@ export interface Landscape { position: Vec; size: Vec; resolution: number; heigh
 export interface WaterVolume { id: string; position: Vec; radius: number }
 export interface Rock { position: Vec; size: Vec }
 export interface Course { id: string; mode: Mode; height: number; start: Vec; anchors: Anchor[]; platforms: Platform[]; summit: Platform; waters?: WaterVolume[]; rocks?: Rock[]; biomes?: Biome[]; solids?: Solid[]; landscapes?: Landscape[]; bounds?: number; route?: CourseBeat[] }
-export interface Controls { x: number; z: number; jump: boolean; grapplePress: boolean; grappleRelease: boolean; swim?: number }
-export interface GameEvent { type: 'shoot' | 'catch' | 'release' | 'eat' | 'touch' | 'dash' | 'water-enter' | 'water-exit' | 'bounce' | 'miss' | 'blocked' | 'land' | 'recovery' | 'fall' | 'reset' | 'summit'; position: Vec; anchor?: string; speed?: number; reason?: string }
-export interface DashState { remaining: number; direction: Vec; kind?: 'release' | 'launch'; duration?: number; distance?: number; travelled?: number; anchor?: string; origin?: Vec; targetPosition?: Vec }
+export interface Controls { x: number; z: number; jump: boolean; grapplePress: boolean; grappleRelease: boolean; swim?: number; cameraForward?: Vec }
+export interface GameEvent { type: 'shoot' | 'catch' | 'release' | 'eat' | 'touch' | 'swing' | 'water-enter' | 'water-exit' | 'bounce' | 'miss' | 'blocked' | 'land' | 'recovery' | 'fall' | 'reset' | 'summit'; position: Vec; anchor?: string; speed?: number; reason?: string; direction?: Vec }
+export interface ImpulseState { remaining: number; direction: Vec; kind: 'release' | 'eat-swing'; duration: number }
+/** Version 1 save compatibility for pre-swing dash states. New snapshots use `swing`. */
+export interface LegacyDashState { remaining: number; direction: Vec; kind?: 'release' | 'launch'; duration?: number; distance?: number; travelled?: number; anchor?: string; origin?: Vec; targetPosition?: Vec }
 export interface FlyLife { phase: 'alive' | 'retracting' | 'hidden' | 'respawning'; elapsed: number; remaining: number }
 export interface SaveState {
   version: 1; course: string; mode: Mode; position: Vec; velocity: Vec;
   attached: string | null; length: number; peak: number; time: number; falls: number;
   tick: number; finished: boolean;
   eatenFlies?: { id: string; remaining: number }[];
-  dash?: DashState;
+  swing?: ImpulseState;
+  dash?: LegacyDashState;
   anchorPhases?: { id: string; time: number }[];
 }
 export const vec = (x = 0, y = 0, z = 0): Vec => ({ x, y, z });

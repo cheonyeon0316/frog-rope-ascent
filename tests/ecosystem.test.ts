@@ -45,7 +45,7 @@ it('lets transition failures lose the new ecosystem and land in an earlier one',
     s.body.setLinvel(vec(0, -15, 0), true); s.peak = current.start + 8;
     for (let t = 0; t < 480; t++) s.step(idle, null);
     expect(s.position.y, current.id).toBeLessThan(current.start - 1);
-    expect(s.position.y).toBeGreaterThan(previous.start);
+    expect(s.position.y, `${current.id} failed into ${previous.id} at ${JSON.stringify(column)}`).toBeGreaterThan(previous.start);
     expect(s.biome?.id).toBe(previous.id);
     expect(s.peak).toBe(current.start + 8);
     expect(s.events.some(e => e.type === 'reset')).toBe(false);

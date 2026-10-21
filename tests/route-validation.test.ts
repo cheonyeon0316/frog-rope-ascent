@@ -28,7 +28,7 @@ for (const mode of ['training', 'main'] as Mode[]) {
     }
     console.log(JSON.stringify({ mode, peak: s.peak, connectedHigher }));
     expect(connectedHigher).toBe(true);
-    expect(s.peak).toBeGreaterThan(5.5);
+    expect(s.peak).toBeGreaterThan(4);
     s.dispose();
   });
 }

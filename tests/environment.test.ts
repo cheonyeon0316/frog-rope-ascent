@@ -1,6 +1,6 @@
 import { beforeAll, it, expect } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { Simulation, DT, DASH_CONFIG } from '../src/game/simulation';
+import { Simulation, DT, RELEASE_CONFIG } from '../src/game/simulation';
 import { movingAnchorPosition, WATER_CONFIG } from '../src/game/environment';
 import { makeLegacyCourse as makeCourse } from '../src/game/legacy-course';
 import { vec, distance, type Course, type Controls } from '../src/game/types';
@@ -44,14 +44,14 @@ it('freezes on the input catch tick and resumes continuously after eating and re
   s.dispose();
 });
 
-it('aims and eat-dashes toward the current moving point rather than its original position', () => {
+it('selects the current moving point and applies the ordinary release nudge toward it', () => {
   const s = new Simulation(fixture());
   for (let i = 0; i < 120; i++) s.step(idle, null);
   const a = s.anchorPosition('moving')!, camera = vec(0, 5, 8), d = distance(camera, a);
   expect(s.selectTarget(camera, vec((a.x - camera.x) / d, (a.y - camera.y) / d, (a.z - camera.z) / d))?.id).toBe('moving');
   expect(s.attach('moving')).toBe(true); s.body.setLinvel(vec(), true);
   const p = s.position, r = distance(p, a); s.release();
-  expect(distance(s.velocity, vec((a.x - p.x) / r * DASH_CONFIG.boost, (a.y - p.y) / r * DASH_CONFIG.boost, (a.z - p.z) / r * DASH_CONFIG.boost))).toBeLessThan(.00001);
+  expect(distance(s.velocity, vec((a.x - p.x) / r * RELEASE_CONFIG.boost, (a.y - p.y) / r * RELEASE_CONFIG.boost, (a.z - p.z) / r * RELEASE_CONFIG.boost))).toBeLessThan(.00001);
   s.dispose();
 });
 

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { type Course, type Anchor, type Platform, type WaterVolume, type Vec, clamp, COLORS } from '../game/types';
-import { FLY_TIMING, DASH_CONFIG, type Simulation } from '../game/simulation';
+import { FLY_TIMING, type Simulation } from '../game/simulation';
 import { landscapeMesh, starMesh, cloudClumps, platformMesh, bladeHeight } from '../game/environment';
 
 const V = (p: Vec) => new THREE.Vector3(p.x, p.y, p.z);
@@ -130,7 +130,7 @@ export class Garden {
   private frogJaw!: THREE.Mesh;
   private frogBelly!: THREE.Mesh;
   private cheeks: THREE.Mesh[] = [];
-  private dashTrail = new THREE.Group();
+  private swingBurst = new THREE.Group();
   private waterSurfaces: { volume: WaterVolume; surface: THREE.Mesh; bubbles: THREE.Mesh[] }[] = [];
   private flies = new Map<string, THREE.Group>();
   private targetRing = new THREE.Mesh(new THREE.TorusGeometry(.58, .035, 6, 28), new THREE.MeshBasicMaterial({ color: '#ecf5a2', depthTest: false }));
@@ -169,7 +169,7 @@ export class Garden {
     toe: material('#c6b35f', .68), iris: material('#a9965d', .48),
     bark: material('#755848'), leaf: material('#6c9651'), leafTop: material('#a0bc6b'), pot: material('#bc805b'),
     metal: material('#61938a', .5), water: material('#8bbbc0', .35), fly: material('#5e6557'), pink: material('#e99da6'),
-    dash: new THREE.MeshBasicMaterial({ color: '#fff6d7', transparent: true, opacity: .6, depthWrite: false }),
+    swing: new THREE.MeshBasicMaterial({ color: '#fff6d7', transparent: true, opacity: .6, depthWrite: false }),
   };
 
   get movementYaw() { return this.renderedYaw; }
@@ -203,8 +203,8 @@ export class Garden {
     this.sun.shadow.normalBias = .04;
     this.scene.add(this.sun, this.sun.target, this.world);
     this.makeFrog(); this.frog.scale.setScalar(.64); this.scene.add(this.frog, this.tongue.mesh, this.targetRing, this.attachedRing);
-    for (let i = 0; i < 3; i++) this.mesh(new THREE.CylinderGeometry(.012, .025, .5, 5), this.mats.dash, this.dashTrail);
-    this.dashTrail.visible = false; this.scene.add(this.dashTrail);
+    for (let i = 0; i < 7; i++) this.mesh(new THREE.ConeGeometry(.06, .22, 4), this.mats.swing, this.swingBurst);
+    this.swingBurst.visible = false; this.scene.add(this.swingBurst);
     this.targetRing.renderOrder = 3; this.attachedRing.renderOrder = 3;
     this.resize(); window.addEventListener('resize', () => this.resize());
     this.modelAssetsReady = this.preloadModelAssets();
@@ -1057,39 +1057,34 @@ export class Garden {
       bubbles.forEach((bubble, i) => bubble.position.set(Math.sin(i * 2.4) * volume.radius * .38,
         (((now * .25 + i / 6) % 1) - .5) * volume.radius * 1.6, Math.cos(i * 2.4) * volume.radius * .38));
     }
-    const dashState = sim.dash;
-    const strong = dashState?.kind === 'launch';
-    const dash = dashState ? clamp(dashState.remaining / (strong ? dashState.duration ?? DASH_CONFIG.launchDuration : DASH_CONFIG.duration), 0, 1) : 0;
-    const launchProgress = strong && dashState?.distance ? clamp((dashState.travelled ?? 0) / dashState.distance, 0, 1) : 0;
-    const launchStroke = Math.sin(launchProgress * Math.PI);
-    this.dashTrail.visible = !!dashState;
-    if (dashState) {
-      const direction = V(dashState.direction);
+    const swingState = sim.impulse;
+    const eatSwing = swingState?.kind === 'eat-swing';
+    const swingProgress = swingState ? clamp(1 - swingState.remaining / swingState.duration, 0, 1) : 0;
+    const recoilStroke = eatSwing ? Math.sin(clamp(swingProgress / .72, 0, 1) * Math.PI) : 0;
+    this.swingBurst.visible = !!eatSwing && swingProgress < .92;
+    if (eatSwing && swingState) {
+      const direction = V(swingState.direction);
       const right = new THREE.Vector3().crossVectors(direction, Math.abs(direction.y) > .96 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)).normalize();
-      this.mats.dash.opacity = dash * (strong ? .95 : .7);
-      this.mats.dash.color.set(strong ? '#fff3a1' : '#fff6d7');
-      this.dashTrail.children.forEach((line, i) => {
-        line.position.copy(p).addScaledVector(direction, -(.5 + i * .22 + (1 - dash) * .35)).addScaledVector(right, (i - 1) * .16);
-        line.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
-        line.scale.set(strong ? 1.8 : 1, (strong ? 2 : .7) + (1 - dash) * .5, strong ? 1.8 : 1);
+      this.mats.swing.opacity = (1 - swingProgress) * .78;
+      this.mats.swing.color.set('#f7eab2');
+      this.swingBurst.children.forEach((leaf, i) => {
+        const angle = i * Math.PI * 2 / this.swingBurst.children.length + swingProgress * .8;
+        const spread = .18 + swingProgress * .7;
+        leaf.position.copy(p).addScaledVector(direction, -.24 + swingProgress * .22)
+          .addScaledVector(right, Math.cos(angle) * spread).add(new THREE.Vector3(0, Math.sin(angle) * spread, 0));
+        leaf.rotation.set(Math.sin(angle) * .9, angle, Math.cos(angle) * .8);
+        leaf.scale.setScalar((1 - swingProgress) * (.72 + .28 * Math.sin(angle * 2)));
       });
     }
     if (target && sim.flyLife(target.id).phase !== 'alive') target = null;
     const meals = sim.course.anchors.map(anchor => ({ anchor, life: sim.flyLife(anchor.id) }))
-      .filter(meal => meal.life.remaining > 0 && (meal.life.elapsed < FLY_TIMING.retract + FLY_TIMING.swallow || strong && meal.anchor.id === dashState?.anchor));
-    const pulling = strong && dashState?.anchor
-      ? meals.find(meal => meal.anchor.id === dashState.anchor)
-      : meals.filter(meal => meal.life.phase === 'retracting').sort((a, b) => a.life.elapsed - b.life.elapsed)[0];
+      .filter(meal => meal.life.remaining > 0 && meal.life.elapsed < FLY_TIMING.retract + FLY_TIMING.swallow);
+    const pulling = meals.filter(meal => meal.life.phase === 'retracting').sort((a, b) => a.life.elapsed - b.life.elapsed)[0];
     let open = 0, gulp = 0;
     for (const meal of meals) {
       const t = meal.life.elapsed;
       open = Math.max(open, t < FLY_TIMING.retract ? .2 + .8 * Math.sin(clamp(t / .18, 0, 1) * Math.PI / 2) : 1 - clamp((t - FLY_TIMING.retract) / .1, 0, 1));
       if (t >= FLY_TIMING.retract) gulp = Math.max(gulp, Math.sin(clamp((t - FLY_TIMING.retract) / FLY_TIMING.swallow, 0, 1) * Math.PI));
-      if (strong && meal.anchor.id === dashState?.anchor) {
-        open = Math.max(open, 1 - launchProgress * .82);
-        const swallow = clamp((launchProgress - .76) / .24, 0, 1);
-        gulp = Math.max(gulp, Math.sin(swallow * Math.PI));
-      }
     }
     this.frog.position.copy(p);
     const look = sim.anchor ? V(sim.anchor.position).sub(p) : pulling ? V(sim.anchorPosition(pulling.anchor.id)!).sub(p) : speed > .3 ? v.clone() : new THREE.Vector3(0, 0, 1);
@@ -1098,12 +1093,13 @@ export class Garden {
     while (diff > Math.PI) diff -= Math.PI * 2; while (diff < -Math.PI) diff += Math.PI * 2;
     this.frog.rotation.y += diff * Math.min(1, dt * 10);
     const tilt = sim.grounded ? 0 : clamp(speed / 18, 0, .55);
-    this.frogBody.rotation.x = THREE.MathUtils.lerp(this.frogBody.rotation.x, sim.attached ? -.25 : water ? -.08 - Math.min(.3, speed * .04) : dashState ? -Math.asin(clamp(dashState.direction.y, -1, 1)) * .65 : v.y > 0 ? -.15 - tilt : .1 + tilt * .45, Math.min(1, dt * 9));
-    this.frogBody.rotation.z = motion && !sim.grounded ? Math.sin(now * 2.3) * Math.min(.22, speed * .012) + (strong ? Math.sin(launchProgress * Math.PI) * .12 : 0) : 0;
+    this.frogBody.rotation.x = THREE.MathUtils.lerp(this.frogBody.rotation.x, sim.attached ? -.25 : water ? -.08 - Math.min(.3, speed * .04) : eatSwing && swingState ? -Math.asin(clamp(swingState.direction.y, -1, 1)) * .48 : v.y > 0 ? -.15 - tilt : .1 + tilt * .45, Math.min(1, dt * 9));
+    this.frogBody.rotation.z = motion && !sim.grounded ? Math.sin(now * 2.3) * Math.min(.22, speed * .012)
+      + (eatSwing ? (swingState?.direction.x ?? 0) * recoilStroke * .12 : 0) : 0;
     const bounce = Math.max(0, 1 - (now - this.landing) / .26) * this.squash;
-    this.frogBody.scale.set(1 + bounce * .15 + gulp * .08 + (strong ? launchStroke * .08 : 0),
-      1 - bounce * .25 + gulp * .06 - (strong ? .08 + launchStroke * .16 : dash * .1),
-      1 + bounce * .12 + (strong ? .12 + launchStroke * .4 : dash * .25));
+    this.frogBody.scale.set(1 + bounce * .15 + gulp * .08 + recoilStroke * .08,
+      1 - bounce * .25 + gulp * .06 - recoilStroke * .12,
+      1 + bounce * .12 + recoilStroke * .26);
     this.frogBody.position.y = Math.max(0, hop) * .11;
     this.frogBody.scale.y += hop * .08;
     this.frogMouth.scale.set(1.15 + open * .2, .07 + open * .5, .2);
@@ -1133,17 +1129,15 @@ export class Garden {
         hip = front ? -.92 + pedal * .18 : .58 + pedal * .58;
         knee = front ? -.48 + Math.max(0, pedal) * .2 : -.1 + Math.max(0, -pedal) * .68;
         ankle = pedal * .14;
-      } else if (dashState) {
-        if (strong) {
-          const recoil = 1 - clamp(launchProgress / .2, 0, 1);
-          hip = front ? -.62 * recoil + .42 + launchStroke * .52 : .72 * recoil + .38 - launchStroke * .72;
-          knee = front ? -.3 + recoil * .35 - launchStroke * .18 : -.12 + recoil * .22 + launchStroke * .58;
-          ankle = -.12 + launchProgress * .16;
-        } else {
-          hip = front ? .8 : .7;
-          knee = front ? -.24 : -.48;
-          ankle = -.16;
-        }
+      } else if (eatSwing) {
+        const recoil = 1 - clamp(swingProgress / .3, 0, 1);
+        hip = front ? -.62 * recoil + .42 + recoilStroke * .42 : .72 * recoil + .38 - recoilStroke * .62;
+        knee = front ? -.3 + recoil * .35 - recoilStroke * .14 : -.12 + recoil * .22 + recoilStroke * .48;
+        ankle = -.12 + swingProgress * .16;
+      } else if (swingState) {
+        hip = front ? .8 : .7;
+        knee = front ? -.24 : -.48;
+        ankle = -.16;
       } else if (!sim.grounded) {
         const tuck = v.y > 0 ? 1 : 0;
         hip = front ? -.58 - tuck * .3 : .48 + tuck * .48;
@@ -1167,8 +1161,7 @@ export class Garden {
       fly.position.copy(V(point));
       fly.rotation.y = Math.atan2(p.x - point.x, p.z - point.z);
       fly.rotation.z = 0;
-      const launchPull = strong && dashState?.anchor === id;
-      const struggling = sim.attached === id || life.phase === 'retracting' || launchPull;
+      const struggling = sim.attached === id || life.phase === 'retracting';
       fly.traverse(child => {
         if (child.userData.wing) child.rotation.z = Number(child.userData.baseWingRotation ?? 0)
           + child.userData.wing * (Math.sin(now * (struggling ? 96 : 42)) * (struggling ? .85 : .5) + (struggling ? Math.sin(now * 37) * .18 : 0));
@@ -1181,12 +1174,7 @@ export class Garden {
       fly.userData.struggling = struggling;
       const baseScale = Number(fly.userData.baseScale ?? 1);
       fly.scale.setScalar(baseScale * (id === target?.id ? 1.08 : 1));
-      if (launchPull) {
-        const t = launchProgress, eased = t * t * (3 - 2 * t);
-        fly.position.lerp(mouth, eased); fly.position.y += Math.sin(t * Math.PI) * .15;
-        fly.rotation.z = Math.sin(t * Math.PI) * .5;
-        fly.scale.setScalar(baseScale * (1 - THREE.MathUtils.smoothstep(t, .82, 1)));
-      } else if (life.phase === 'hidden') fly.visible = false;
+      if (life.phase === 'hidden') fly.visible = false;
       else if (life.phase === 'retracting') {
         const t = clamp(life.elapsed / FLY_TIMING.retract, 0, 1);
         const eased = t * t * (3 - 2 * t);
@@ -1214,18 +1202,18 @@ export class Garden {
     const authored = !!sim.course.route;
     const goalFocus = p.clone().add(new THREE.Vector3(0, authored ? 2.7 : 1.2, 0));
     if (sim.anchor) goalFocus.lerp(V(sim.anchor.position), .18);
-    // Let the view anticipate the frog's arc, so a fast launch feels like forward travel
-    // instead of the character sliding across a camera that is still catching up.
-    const cameraLead = v.clone().multiplyScalar(dashState ? .12 : .075);
+    // Let speed gently lead the camera while keeping the same follow behavior
+    // for normal movement and food swings.
+    const cameraLead = v.clone().multiplyScalar(.055 + Math.min(.035, speed * .001));
     cameraLead.x = clamp(cameraLead.x, -.85, .85);
     cameraLead.z = clamp(cameraLead.z, -.85, .85);
     cameraLead.y = clamp(cameraLead.y, -.8, 1.35);
     goalFocus.add(cameraLead);
     if (!this.sceneReady) { this.focus.copy(goalFocus); this.sceneReady = true; }
-    else this.focus.lerp(goalFocus, 1 - Math.exp(-dt * (8 + Math.min(10, speed * .3) + (dashState ? 5 : 0))));
+    else this.focus.lerp(goalFocus, 1 - Math.exp(-dt * (8 + Math.min(10, speed * .3))));
     const wanted = (sim.anchor ? clamp(sim.ropeLength * .8 + (authored ? 7 : 4), authored ? 11 : 7, authored ? 15 : 12) : authored ? 12 : 8)
-      + Math.min(1.1, speed * .045) + (strong ? .7 : 0);
-    this.distance = THREE.MathUtils.lerp(this.distance, wanted, 1 - Math.exp(-dt * (4 + (dashState ? 4 : 0))));
+      + Math.min(1.1, speed * .045);
+    this.distance = THREE.MathUtils.lerp(this.distance, wanted, 1 - Math.exp(-dt * 4));
     const drift = motion && !sim.attached ? Math.sin(now * .42) * .026 : 0;
     // Keep biome transitions from rotating the view underneath camera-relative WASD.
     const yaw = this.yaw + drift;
@@ -1250,14 +1238,14 @@ export class Garden {
     this.camera.position.copy(this.focus).add(offset); this.camera.lookAt(this.focus);
     this.fadeCameraOccluders();
     const speedFactor = clamp((speed - 3) / 22, 0, 1);
-    const wantedFov = 60 + speedFactor * (strong ? 10 : 5.5) + (sim.attached && horizontalSpeed > 5 ? 1.5 : 0);
-    this.cameraFov = THREE.MathUtils.lerp(this.cameraFov, wantedFov, 1 - Math.exp(-dt * (strong ? 8 : 3.5)));
+    const wantedFov = 60 + speedFactor * 5.5 + (sim.attached && horizontalSpeed > 5 ? 1.5 : 0);
+    this.cameraFov = THREE.MathUtils.lerp(this.cameraFov, wantedFov, 1 - Math.exp(-dt * 3.5));
     if (Math.abs(this.camera.fov - this.cameraFov) > .05) {
       this.camera.fov = this.cameraFov;
       this.camera.updateProjectionMatrix();
     }
     const lateralSpeed = v.x * Math.cos(yaw) - v.z * Math.sin(yaw);
-    const wantedBank = motion ? clamp(-lateralSpeed * .0028, -.075, .075) * (dashState ? 1.25 : 1) : 0;
+    const wantedBank = motion ? clamp(-lateralSpeed * .0028, -.075, .075) : 0;
     this.cameraBank = THREE.MathUtils.lerp(this.cameraBank, wantedBank, 1 - Math.exp(-dt * 4.5));
     this.camera.rotateZ(this.cameraBank);
     this.canvas.dataset.cameraYaw = yaw.toFixed(4);
