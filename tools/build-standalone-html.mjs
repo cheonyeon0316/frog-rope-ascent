@@ -34,6 +34,7 @@ async function collectModels(directory) {
     if (entry.isDirectory()) await collectModels(filename);
     else if (entry.isFile() && entry.name.toLowerCase().endsWith('.glb')) {
       const relative = path.relative(dist, filename).split(path.sep).join('/');
+      if (!/^assets\/eco-(pond|meadow|upper)\//.test(relative)) continue;
       embeddedModels[relative] = (await readFile(filename)).toString('base64');
     }
   }

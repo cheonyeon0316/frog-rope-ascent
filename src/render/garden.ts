@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { type Course, type Anchor, type Platform, type WaterVolume, type Vec, type Food, clamp, COLORS } from '../game/types';
+import { type Course, type Anchor, type Platform, type WaterVolume, type Vec, clamp, COLORS } from '../game/types';
 import { FLY_TIMING, DASH_CONFIG, type Simulation } from '../game/simulation';
 import { landscapeMesh, starMesh, cloudClumps, platformMesh, bladeHeight } from '../game/environment';
 
@@ -10,11 +10,6 @@ const material = (color: THREE.ColorRepresentation, roughness = .85) => new THRE
 type LoadedModel = Awaited<ReturnType<GLTFLoader['loadAsync']>>;
 
 const MODEL_FILES: Record<string, string> = {
-  'frog-hero': 'assets/character/frog_hero_lowpoly.glb',
-  'food-fruit-fly': 'assets/eco-food/food_fruit_fly.glb', 'food-fly': 'assets/eco-food/food_fly.glb',
-  'food-beetle': 'assets/eco-food/food_beetle.glb', 'food-pollen': 'assets/eco-food/food_pollen.glb',
-  'food-bee': 'assets/eco-food/food_bee.glb', 'food-moth': 'assets/eco-food/food_moth.glb',
-  'food-dew': 'assets/eco-food/food_dew.glb', 'food-stardust': 'assets/eco-food/food_stardust.glb',
   'pond-basin': 'assets/eco-pond/mdl_env_pond_basin.glb', 'pond-leaf': 'assets/eco-pond/mdl_env_leaf_round.glb',
   'pond-reed': 'assets/eco-pond/mdl_env_reed.glb', 'pond-root-bridge': 'assets/eco-pond/mdl_env_root_bridge.glb',
   'pond-stones': 'assets/eco-pond/mdl_env_stone_cluster.glb', 'pond-lilies': 'assets/eco-pond/mdl_env_lily_cluster.glb',
@@ -24,13 +19,6 @@ const MODEL_FILES: Record<string, string> = {
   'meadow-flower-patch': 'assets/eco-meadow/mdl_env_wildflower_patch.glb',
   'upper-branch': 'assets/eco-upper/mdl_env_old_tree_branch.glb', 'upper-ridge': 'assets/eco-upper/mdl_env_mountain_ridge.glb',
   'upper-clouds': 'assets/eco-upper/mdl_env_cloud_shelf.glb', 'upper-star': 'assets/eco-upper/mdl_env_starway_platform.glb',
-};
-const FOOD_MODELS: Record<Food, string> = {
-  'fruit-fly': 'food-fruit-fly', fly: 'food-fly', beetle: 'food-beetle', pollen: 'food-pollen',
-  bee: 'food-bee', moth: 'food-moth', dew: 'food-dew', stardust: 'food-stardust',
-};
-const FOOD_MODEL_SIZES: Record<Food, number> = {
-  'fruit-fly': .58, fly: .72, beetle: .72, pollen: .58, bee: .68, moth: .84, dew: .58, stardust: .68,
 };
 
 // Each tuft is a small, low-poly plant made from several individually bent leaves.
@@ -133,10 +121,6 @@ export class Garden {
   private modelLoadVersion = 0;
   private world = new THREE.Group();
   private frogBody = new THREE.Group();
-  private frogAssetRoot: THREE.Group | null = null;
-  private frogMixer: THREE.AnimationMixer | null = null;
-  private frogActions = new Map<string, THREE.AnimationAction>();
-  private activeFrogAction = '';
   private frogLegs: FrogLimb[] = [];
   private grassShapes = makeGrassShapes();
   private grassMaterial = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: .92, side: THREE.DoubleSide, flatShading: true });
@@ -436,7 +420,7 @@ export class Garden {
   private makeFly(a: Anchor): void {
     const group = new THREE.Group(); group.position.copy(V(a.position)); group.userData.anchor = a; this.world.add(group);
     group.userData.baseScale = a.food === 'fruit-fly' ? .72 : a.food === 'moth' ? 1.18 : 1;
-    const visual = new THREE.Group(); visual.name = 'procedural-food-fallback'; group.add(visual); group.userData.assetFallback = visual;
+    const visual = new THREE.Group(); visual.name = 'procedural-food'; group.add(visual);
     if (a.transition) {
       const glow = new THREE.MeshBasicMaterial({ color: '#ffe3a0' });
       for (const y of [-.09, .09]) this.mesh(new THREE.TorusGeometry(.48, .022, 5, 32), glow, group, new THREE.Vector3(0, y, 0));
@@ -867,58 +851,6 @@ export class Garden {
     return land.position.y + THREE.MathUtils.lerp(THREE.MathUtils.lerp(h00, h10, fx), THREE.MathUtils.lerp(h01, h11, fx), fz);
   }
 
-  private installFrogAsset(): boolean {
-    if (this.frogAssetRoot) return true;
-    const source = this.modelAssets.get('frog-hero');
-    if (!source) return false;
-    const model = this.fittedAsset('frog-hero', 1.75, 'largest', 'center');
-    if (!model) return false;
-    const root = new THREE.Group(); root.name = 'frog-hero-glb'; root.rotation.y = Math.PI;
-    root.add(model); this.frog.add(root); this.frogAssetRoot = root; this.frogBody.visible = false;
-    this.frogMixer = new THREE.AnimationMixer(model);
-    this.frogActions.clear(); this.activeFrogAction = '';
-    for (const clip of source.animations) this.frogActions.set(clip.name, this.frogMixer.clipAction(clip));
-    this.canvas.dataset.frogAsset = 'frog_hero_lowpoly.glb';
-    this.playFrogAction('Frog_Idle', 0);
-    return true;
-  }
-
-  private playFrogAction(name: string, fade = .12): void {
-    const action = this.frogActions.get(name);
-    if (!action || this.activeFrogAction === name) return;
-    const previous = this.frogActions.get(this.activeFrogAction);
-    action.reset(); action.setLoop(THREE.LoopRepeat, Infinity); action.fadeIn(fade).play();
-    if (previous) previous.fadeOut(fade);
-    this.activeFrogAction = name;
-    this.canvas.dataset.frogAnimation = name;
-  }
-
-  private installFoodAssets(course: Course): number {
-    let count = 0;
-    for (const anchor of course.anchors) {
-      const food = anchor.food ?? 'fly', fly = this.flies.get(anchor.id);
-      const model = this.fittedAsset(FOOD_MODELS[food], FOOD_MODEL_SIZES[food], 'largest', 'center');
-      if (!fly || !model) continue;
-      model.name = `food-model-${food}`;
-      model.traverse(object => {
-        if (!(object instanceof THREE.Mesh)) return;
-        const lowerName = object.name.toLowerCase();
-        if (lowerName.includes('wing')) {
-          const side = Math.sign(object.position.x) || (lowerName.includes('left') || lowerName.endsWith('l') ? -1 : 1);
-          object.userData.wing = side;
-          object.userData.baseWingRotation = object.rotation.z;
-        }
-      });
-      (fly.userData.assetFallback as THREE.Group | undefined)?.traverse(object => {
-        if (object instanceof THREE.Mesh && !object.userData.sharedAsset) object.visible = false;
-      });
-      const fallback = fly.userData.assetFallback as THREE.Group | undefined;
-      if (fallback) fallback.visible = false;
-      fly.add(model); fly.userData.modelAsset = FOOD_MODELS[food]; count++;
-    }
-    return count;
-  }
-
   private installEcosystemAssets(course: Course): number {
     if (!course.biomes || course.id !== 'ecosystem-main-v3') return 0;
     const land = course.landscapes?.find(item => item.zone === 0);
@@ -1065,14 +997,14 @@ export class Garden {
     this.hopPhase = 0; this.lastAnimationTime = 0;
     await this.modelAssetsReady;
     if (loadVersion !== this.modelLoadVersion) return;
-    const heroInstalled = this.installFrogAsset();
-    const foodsInstalled = this.installFoodAssets(course);
     const sceneryInstalled = this.installEcosystemAssets(course);
-    if (!heroInstalled) this.canvas.dataset.frogAsset = 'procedural-fallback';
-    this.canvas.dataset.foodAssets = String(foodsInstalled);
+    this.canvas.dataset.frogAsset = 'procedural';
+    this.canvas.dataset.proceduralFrogVisible = String(this.frogBody.visible);
+    this.canvas.dataset.foodAssets = '0';
+    this.canvas.dataset.proceduralFoods = String(this.flies.size);
     this.canvas.dataset.ecologyAssets = String(sceneryInstalled);
     this.canvas.dataset.assetState = 'ready';
-    this.canvas.dataset.assetInstances = String((heroInstalled ? 1 : 0) + foodsInstalled + sceneryInstalled);
+    this.canvas.dataset.assetInstances = String(sceneryInstalled);
   }
 
   resize(): void {
@@ -1127,9 +1059,6 @@ export class Garden {
     }
     const dashState = sim.dash;
     const strong = dashState?.kind === 'launch';
-    const frogAction = dashState ? 'Frog_Dash' : !sim.grounded || running ? 'Frog_Jump' : 'Frog_Idle';
-    this.playFrogAction(frogAction);
-    this.frogMixer?.update(animationDt);
     const dash = dashState ? clamp(dashState.remaining / (strong ? dashState.duration ?? DASH_CONFIG.launchDuration : DASH_CONFIG.duration), 0, 1) : 0;
     const launchProgress = strong && dashState?.distance ? clamp((dashState.travelled ?? 0) / dashState.distance, 0, 1) : 0;
     const launchStroke = Math.sin(launchProgress * Math.PI);
@@ -1229,9 +1158,7 @@ export class Garden {
       foot.rotation.z = THREE.MathUtils.lerp(foot.rotation.z, side * (running ? -.12 : 0), Math.min(1, animationDt * 12));
     });
     this.frog.updateMatrixWorld(true);
-    const mouth = this.frogAssetRoot
-      ? this.frog.localToWorld(new THREE.Vector3(0, .015 - open * .025, .76))
-      : this.frogBody.localToWorld(new THREE.Vector3(0, -.075 - open * .035, .78));
+    const mouth = this.frogBody.localToWorld(new THREE.Vector3(0, -.075 - open * .035, .78));
     for (const [id, fly] of this.flies) {
       const a = fly.userData.anchor as Anchor;
       const point = sim.anchorPosition(id)!;

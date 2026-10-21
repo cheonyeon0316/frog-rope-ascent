@@ -9,13 +9,13 @@
       "launch": {
         "state": "playing",
         "attached": "",
-        "height": 0.32,
+        "height": 0.26,
         "dash": "launch",
         "refuge": "",
         "v": {
-          "x": 1.464,
-          "y": 11.437,
-          "z": -0.915
+          "x": 1.444,
+          "y": 11.445,
+          "z": -0.903
         }
       },
       "chained": {
@@ -25,9 +25,9 @@
         "dash": "launch",
         "refuge": "",
         "v": {
-          "x": 3.378,
-          "y": 9.34,
-          "z": -4.72
+          "x": 3.385,
+          "y": 9.345,
+          "z": -4.71
         }
       }
     },
@@ -40,25 +40,25 @@
       "paused": {
         "state": "paused",
         "attached": "",
-        "height": 10.19,
+        "height": 9.89,
         "dash": "launch",
         "refuge": "",
         "v": {
-          "x": -0.841,
-          "y": 11.5,
-          "z": 0.435
+          "x": -0.839,
+          "y": 11.671,
+          "z": 0.434
         }
       },
       "restored": {
         "state": "paused",
         "attached": "",
-        "height": 10.19,
+        "height": 9.89,
         "dash": "launch",
         "refuge": "",
         "v": {
-          "x": -0.841,
-          "y": 11.5,
-          "z": 0.435
+          "x": -0.839,
+          "y": 11.671,
+          "z": 0.434
         }
       },
       "landed": {
@@ -68,8 +68,8 @@
         "dash": "",
         "refuge": "basin-grass",
         "v": {
-          "x": 0.503,
-          "y": 0.058,
+          "x": 0.546,
+          "y": 0.063,
           "z": -0.008
         }
       },

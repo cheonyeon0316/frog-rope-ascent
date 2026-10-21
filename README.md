@@ -71,7 +71,7 @@ Windows 패키지의 `START-GAME.cmd`는 배포 게임을 **http://127.0.0.1:528
 pnpm test             # 72개 물리·저장·코스 회귀 검사, 연속 입력 완주 포함
 pnpm build            # 타입 검사·배포 빌드
 pnpm test:ecosystem   # 새 생태계의 착지·먹이 연결/먹기·화면 (dev 서버)
-pnpm test:assets      # 실제 GLB 로드·배치·개구리 애니메이션 (dev 서버)
+pnpm test:assets      # 환경 GLB 17종·소품 18개 배치와 기존 캐릭터 복원 (dev 서버)
 pnpm test:browser     # 기본 입력·일시정지·저장·작은 창
 pnpm test:transfer    # 독립 브라우저 간 저장 내보내기/가져오기
 pnpm test:feeding     # 회수·삼키기·재생성
