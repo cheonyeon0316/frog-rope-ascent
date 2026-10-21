@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,5 +26,21 @@ const stylesheet = (await readFile(stylePath, 'utf8')).replace(/<\/style/gi, '<\
 html = html.replace(scriptTag[0], () => `<script type="module">${script}</script>`);
 html = html.replace(styleTag[0], () => `<style>${stylesheet}</style>`);
 
+const assetRoot = path.join(dist, 'assets');
+const embeddedModels = {};
+async function collectModels(directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const filename = path.join(directory, entry.name);
+    if (entry.isDirectory()) await collectModels(filename);
+    else if (entry.isFile() && entry.name.toLowerCase().endsWith('.glb')) {
+      const relative = path.relative(dist, filename).split(path.sep).join('/');
+      embeddedModels[relative] = (await readFile(filename)).toString('base64');
+    }
+  }
+}
+await collectModels(assetRoot);
+if (Object.keys(embeddedModels).length === 0) throw new Error('No GLB models were found in the production build.');
+const modelTag = `<script id="game-model-assets" type="application/json">${JSON.stringify(embeddedModels)}</script>`;
+html = html.replace(/<\/body>/i, `${modelTag}</body>`);
 await writeFile(outputPath, html, 'utf8');
-console.log(`Standalone game written to ${outputPath}`);
+console.log(`Standalone game written to ${outputPath} with ${Object.keys(embeddedModels).length} embedded GLB models.`);

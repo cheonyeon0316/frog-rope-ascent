@@ -18,8 +18,10 @@ The estimate is for finished, integrated assets. The models below are first-pass
 
 Sources and previews are in [`blender/`](blender/). Runtime GLBs are in `public/assets/eco-pond/`, `public/assets/eco-food/`, `public/assets/eco-meadow/`, `public/assets/eco-upper/`, and `public/assets/character/`.
 
-## Validation and remaining work
+## Runtime integration and remaining work
 
-All 26 GLBs import into Blender 5.2 with non-empty mesh geometry and non-zero bounds; the frog character exports its 7-bone armature and three animation clips. `pnpm build` passes. The GLBs are not wired into the live Three.js renderer yet, and gameplay collision still comes from course data. The next production work is to refine the frog look and animation timing, finish distinct landmarks and material sets for every biome, add audio/UI/VFX, then integrate and playtest the authored models and collision surfaces.
+All 26 GLBs import into Blender 5.2 with non-empty mesh geometry and non-zero bounds. The live Three.js scene now loads all 26 through `GLTFLoader`: the frog hero replaces the procedural character and uses its `Frog_Idle`, `Frog_Jump`, and `Frog_Dash` clips; all eight food models replace their procedural food visuals across 83 anchors; and 18 hand-placed ecology instances dress the pond, meadow, flower, tree, mountain, cloud, and summit areas. The dense procedural grass is disabled on `ecosystem-main-v3`, leaving four sparse GLB grass clumps. `pnpm test:assets` verifies the loaded model count, rendered instance counts, no browser errors, and the jump animation.
+
+The models remain first-pass art. Gameplay collision and traversal still use course data and the authored procedural platform meshes; the imported ecology models are visual dressing, not new colliders. The single-file `frog-ascent.html` build embeds the GLBs so it works when opened directly. Next production work is art-direction polish, closer visual/collision alignment where a model appears to be a platform, and broader human playtesting.
 
 `blender/validate_asset_glbs.py` can be rerun after generating more assets to check the exported GLBs.

@@ -1,10 +1,37 @@
 import * as THREE from 'three';
-import { type Course, type Anchor, type Platform, type WaterVolume, type Vec, clamp, COLORS } from '../game/types';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import { type Course, type Anchor, type Platform, type WaterVolume, type Vec, type Food, clamp, COLORS } from '../game/types';
 import { FLY_TIMING, DASH_CONFIG, type Simulation } from '../game/simulation';
 import { landscapeMesh, starMesh, cloudClumps, platformMesh, bladeHeight } from '../game/environment';
 
 const V = (p: Vec) => new THREE.Vector3(p.x, p.y, p.z);
 const material = (color: THREE.ColorRepresentation, roughness = .85) => new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
+type LoadedModel = Awaited<ReturnType<GLTFLoader['loadAsync']>>;
+
+const MODEL_FILES: Record<string, string> = {
+  'frog-hero': 'assets/character/frog_hero_lowpoly.glb',
+  'food-fruit-fly': 'assets/eco-food/food_fruit_fly.glb', 'food-fly': 'assets/eco-food/food_fly.glb',
+  'food-beetle': 'assets/eco-food/food_beetle.glb', 'food-pollen': 'assets/eco-food/food_pollen.glb',
+  'food-bee': 'assets/eco-food/food_bee.glb', 'food-moth': 'assets/eco-food/food_moth.glb',
+  'food-dew': 'assets/eco-food/food_dew.glb', 'food-stardust': 'assets/eco-food/food_stardust.glb',
+  'pond-basin': 'assets/eco-pond/mdl_env_pond_basin.glb', 'pond-leaf': 'assets/eco-pond/mdl_env_leaf_round.glb',
+  'pond-reed': 'assets/eco-pond/mdl_env_reed.glb', 'pond-root-bridge': 'assets/eco-pond/mdl_env_root_bridge.glb',
+  'pond-stones': 'assets/eco-pond/mdl_env_stone_cluster.glb', 'pond-lilies': 'assets/eco-pond/mdl_env_lily_cluster.glb',
+  'meadow-grass-a': 'assets/eco-meadow/mdl_env_meadow_grass_a.glb', 'meadow-grass-b': 'assets/eco-meadow/mdl_env_meadow_grass_b.glb',
+  'meadow-grass-c': 'assets/eco-meadow/mdl_env_meadow_grass_c.glb', 'meadow-boulders': 'assets/eco-meadow/mdl_env_moss_boulder_cluster.glb',
+  'meadow-mushrooms': 'assets/eco-meadow/mdl_env_mushroom_cluster.glb', 'meadow-flower': 'assets/eco-meadow/mdl_env_wildflower_landmark.glb',
+  'meadow-flower-patch': 'assets/eco-meadow/mdl_env_wildflower_patch.glb',
+  'upper-branch': 'assets/eco-upper/mdl_env_old_tree_branch.glb', 'upper-ridge': 'assets/eco-upper/mdl_env_mountain_ridge.glb',
+  'upper-clouds': 'assets/eco-upper/mdl_env_cloud_shelf.glb', 'upper-star': 'assets/eco-upper/mdl_env_starway_platform.glb',
+};
+const FOOD_MODELS: Record<Food, string> = {
+  'fruit-fly': 'food-fruit-fly', fly: 'food-fly', beetle: 'food-beetle', pollen: 'food-pollen',
+  bee: 'food-bee', moth: 'food-moth', dew: 'food-dew', stardust: 'food-stardust',
+};
+const FOOD_MODEL_SIZES: Record<Food, number> = {
+  'fruit-fly': .58, fly: .72, beetle: .72, pollen: .58, bee: .68, moth: .84, dew: .58, stardust: .68,
+};
 
 // Each tuft is a small, low-poly plant made from several individually bent leaves.
 // Seven silhouettes share one instanced draw per variant across each patch.
@@ -100,8 +127,16 @@ export class Garden {
   readonly renderer: THREE.WebGLRenderer;
   readonly frog = new THREE.Group();
   readonly tongue = new Tongue();
+  private readonly modelLoader = new GLTFLoader();
+  private readonly modelAssets = new Map<string, LoadedModel>();
+  private readonly modelAssetsReady: Promise<void>;
+  private modelLoadVersion = 0;
   private world = new THREE.Group();
   private frogBody = new THREE.Group();
+  private frogAssetRoot: THREE.Group | null = null;
+  private frogMixer: THREE.AnimationMixer | null = null;
+  private frogActions = new Map<string, THREE.AnimationAction>();
+  private activeFrogAction = '';
   private frogLegs: FrogLimb[] = [];
   private grassShapes = makeGrassShapes();
   private grassMaterial = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: .92, side: THREE.DoubleSide, flatShading: true });
@@ -136,6 +171,8 @@ export class Garden {
   private wallRay = new THREE.Raycaster();
   private cameraRay = new THREE.Raycaster();
   private collisionMeshes: THREE.Object3D[] = [];
+  private platformRoots = new Map<string, THREE.Group>();
+  private pondDecoration: THREE.Object3D[] = [];
   private cameraFades = new Map<THREE.Mesh, { original: THREE.Material | THREE.Material[]; faded: THREE.Material | THREE.Material[] }>();
   private ownedMaterials = new Set<THREE.Material>();
   private biomeColors: string[] = [];
@@ -186,6 +223,39 @@ export class Garden {
     this.dashTrail.visible = false; this.scene.add(this.dashTrail);
     this.targetRing.renderOrder = 3; this.attachedRing.renderOrder = 3;
     this.resize(); window.addEventListener('resize', () => this.resize());
+    this.modelAssetsReady = this.preloadModelAssets();
+  }
+
+  private async preloadModelAssets(): Promise<void> {
+    const base = import.meta.env.BASE_URL;
+    let embeddedAssets: Record<string, string> = {};
+    const embeddedScript = document.querySelector<HTMLScriptElement>('#game-model-assets');
+    if (embeddedScript?.textContent) {
+      try { embeddedAssets = JSON.parse(embeddedScript.textContent) as Record<string, string>; }
+      catch (error) { console.error('Could not read embedded game models.', error); }
+    }
+    await Promise.all(Object.entries(MODEL_FILES).map(async ([id, path]) => {
+      try {
+        let gltf: LoadedModel;
+        const embedded = embeddedAssets[path];
+        if (embedded) {
+          const binary = atob(embedded), bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          gltf = await this.modelLoader.parseAsync(bytes.buffer, '');
+        } else gltf = await this.modelLoader.loadAsync(`${base}${path}`);
+        gltf.scene.traverse(object => {
+          if (object instanceof THREE.Mesh || object instanceof THREE.SkinnedMesh) {
+            object.castShadow = true;
+            object.receiveShadow = true;
+          }
+        });
+        this.modelAssets.set(id, gltf);
+      } catch (error) {
+        console.error(`Failed to load game model ${id} (${path})`, error);
+      }
+    }));
+    this.canvas.dataset.assetModelsLoaded = String(this.modelAssets.size);
+    this.canvas.dataset.assetModelsExpected = String(Object.keys(MODEL_FILES).length);
   }
 
   private mesh(geometry: THREE.BufferGeometry, mat: THREE.Material, parent: THREE.Object3D, position?: THREE.Vector3): THREE.Mesh {
@@ -294,6 +364,9 @@ export class Garden {
 
   private grassOnLandscape(parent: THREE.Object3D, land: NonNullable<Course['landscapes']>[number], course: Course): void {
     if (land.zone !== 0 && land.zone !== 1) return;
+    // The authored ecosystem uses a handful of complete grass clumps from the GLB kit
+    // below. Thousands of procedural blades made those careful landmarks hard to read.
+    if (course.id === 'ecosystem-main-v3') return;
     const points: THREE.Vector3[] = [];
     let state = 0x51f15e + land.zone;
     const random = () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 0x100000000; };
@@ -363,6 +436,7 @@ export class Garden {
   private makeFly(a: Anchor): void {
     const group = new THREE.Group(); group.position.copy(V(a.position)); group.userData.anchor = a; this.world.add(group);
     group.userData.baseScale = a.food === 'fruit-fly' ? .72 : a.food === 'moth' ? 1.18 : 1;
+    const visual = new THREE.Group(); visual.name = 'procedural-food-fallback'; group.add(visual); group.userData.assetFallback = visual;
     if (a.transition) {
       const glow = new THREE.MeshBasicMaterial({ color: '#ffe3a0' });
       for (const y of [-.09, .09]) this.mesh(new THREE.TorusGeometry(.48, .022, 5, 32), glow, group, new THREE.Vector3(0, y, 0));
@@ -370,56 +444,57 @@ export class Garden {
     if (a.food === 'pollen' || a.food === 'dew' || a.food === 'stardust') {
       if (a.food === 'pollen') {
         const gold = material('#efc25e', .5);
-        this.mesh(new THREE.IcosahedronGeometry(.28, 1), gold, group);
+        this.mesh(new THREE.IcosahedronGeometry(.28, 1), gold, visual);
         for (let i = 0; i < 9; i++) {
           const angle = i * 2.399, y = (i / 8 - .5) * .5;
-          this.mesh(new THREE.IcosahedronGeometry(.09, 0), gold, group, new THREE.Vector3(Math.sin(angle) * .3, y, Math.cos(angle) * .3));
+          this.mesh(new THREE.IcosahedronGeometry(.09, 0), gold, visual, new THREE.Vector3(Math.sin(angle) * .3, y, Math.cos(angle) * .3));
         }
       } else if (a.food === 'dew') {
         const water = new THREE.MeshStandardMaterial({ color: '#9ae9f4', roughness: .15, metalness: .15, transparent: true, opacity: .82 });
-        this.mesh(new THREE.SphereGeometry(.23, 12, 8), water, group);
-        this.mesh(new THREE.ConeGeometry(.19, .35, 12), water, group, new THREE.Vector3(0, .2, 0));
-        this.mesh(new THREE.SphereGeometry(.05, 6, 4), this.mats.white, group, new THREE.Vector3(-.1, .07, .17));
+        this.mesh(new THREE.SphereGeometry(.23, 12, 8), water, visual);
+        this.mesh(new THREE.ConeGeometry(.19, .35, 12), water, visual, new THREE.Vector3(0, .2, 0));
+        this.mesh(new THREE.SphereGeometry(.05, 6, 4), this.mats.white, visual, new THREE.Vector3(-.1, .07, .17));
       } else {
         const gold = new THREE.MeshStandardMaterial({ color: '#ffe7a4', emissive: '#e7a43e', emissiveIntensity: .8, roughness: .3 });
-        this.mesh(new THREE.OctahedronGeometry(.35), gold, group);
+        this.mesh(new THREE.OctahedronGeometry(.35), gold, visual);
         for (let i = 0; i < 4; i++) {
-          const spark = this.mesh(new THREE.OctahedronGeometry(.07), gold, group, new THREE.Vector3(Math.sin(i * Math.PI / 2) * .48, Math.cos(i * Math.PI / 2) * .48, 0));
+          const spark = this.mesh(new THREE.OctahedronGeometry(.07), gold, visual, new THREE.Vector3(Math.sin(i * Math.PI / 2) * .48, Math.cos(i * Math.PI / 2) * .48, 0));
           spark.scale.set(.6, 1.6, .6);
         }
       }
       this.flies.set(a.id, group);
-      return;
-    }
-    const bodyMat = a.food === 'bee' ? material('#e9b74d') : a.food === 'fruit-fly' ? material('#ad7748')
-      : a.food === 'beetle' ? material('#3b7b65', .35) : a.food === 'moth' ? material('#857297') : this.mats.fly;
-    const body = this.mesh(new THREE.IcosahedronGeometry(.24, 1), bodyMat, group); body.scale.set(a.food === 'bee' ? .85 : 1.2, .8, a.food === 'bee' ? 1.45 : 1);
-    if (a.food === 'bee') for (let i = 0; i < 3; i++) {
-      const band = this.mesh(new THREE.TorusGeometry(.185, .027, 5, 12), this.mats.dark, group, new THREE.Vector3(0, 0, (i - 1) * .15));
-      band.scale.y = .8;
-    }
-    const stripe = this.mesh(new THREE.IcosahedronGeometry(.20, 0), material('#7e8766'), group, new THREE.Vector3(0, -.03, -.12));
-    stripe.scale.set(1, .7, 1.1);
-    const wingMat = new THREE.MeshStandardMaterial({ color: a.food === 'moth' ? '#cfb1d2' : a.food === 'beetle' ? '#4eaa7d' : '#e8f5da', transparent: a.food !== 'moth', opacity: .77, roughness: .7, side: THREE.DoubleSide, flatShading: true });
-    for (const side of [-1, 1]) {
-      const eye = this.mesh(new THREE.SphereGeometry(.125, 8, 6), this.mats.white, group, new THREE.Vector3(side * .115, .095, .16));
-      const pupil = this.mesh(new THREE.SphereGeometry(.058, 6, 4), this.mats.dark, eye, new THREE.Vector3(0, .018, .10));
-      pupil.userData.pupil = true;
-      const brow = this.mesh(new THREE.BoxGeometry(.17, .023, .026), this.mats.dark, group, new THREE.Vector3(side * .115, .225, .17));
-      brow.userData.brow = side;
-      const wing = this.mesh(new THREE.SphereGeometry(.23, 6, 3), wingMat, group, new THREE.Vector3(side * .3, .1, -.06));
-      wing.scale.set(a.food === 'moth' ? 2 : 1.35, .07, a.food === 'moth' ? 1.4 : .75); wing.userData.wing = side;
-      if (a.food === 'moth') this.mesh(new THREE.SphereGeometry(.065, 6, 4), material('#9f7958'), wing, new THREE.Vector3(side * .06, .03, 0));
-      for (let j = 0; j < 2; j++) {
-        const leg = this.mesh(new THREE.CylinderGeometry(.014, .014, .17, 4), this.mats.dark, group, new THREE.Vector3(side * .16, -.14, j ? -.1 : .1));
-        leg.rotation.z = side * .7;
-        leg.userData.leg = side; leg.userData.offset = j;
+    } else {
+      const food = a.food ?? 'fly';
+      const bodyMat = food === 'bee' ? material('#e9b74d') : food === 'fruit-fly' ? material('#ad7748')
+        : food === 'beetle' ? material('#3b7b65', .35) : food === 'moth' ? material('#857297') : this.mats.fly;
+      const body = this.mesh(new THREE.IcosahedronGeometry(.24, 1), bodyMat, visual); body.scale.set(food === 'bee' ? .85 : 1.2, .8, food === 'bee' ? 1.45 : 1);
+      if (food === 'bee') for (let i = 0; i < 3; i++) {
+        const band = this.mesh(new THREE.TorusGeometry(.185, .027, 5, 12), this.mats.dark, visual, new THREE.Vector3(0, 0, (i - 1) * .15));
+        band.scale.y = .8;
       }
+      const stripe = this.mesh(new THREE.IcosahedronGeometry(.20, 0), material('#7e8766'), visual, new THREE.Vector3(0, -.03, -.12));
+      stripe.scale.set(1, .7, 1.1);
+      const wingMat = new THREE.MeshStandardMaterial({ color: food === 'moth' ? '#cfb1d2' : food === 'beetle' ? '#4eaa7d' : '#e8f5da', transparent: food !== 'moth', opacity: .77, roughness: .7, side: THREE.DoubleSide, flatShading: true });
+      for (const side of [-1, 1]) {
+        const eye = this.mesh(new THREE.SphereGeometry(.125, 8, 6), this.mats.white, visual, new THREE.Vector3(side * .115, .095, .16));
+        const pupil = this.mesh(new THREE.SphereGeometry(.058, 6, 4), this.mats.dark, eye, new THREE.Vector3(0, .018, .10));
+        pupil.userData.pupil = true;
+        const brow = this.mesh(new THREE.BoxGeometry(.17, .023, .026), this.mats.dark, visual, new THREE.Vector3(side * .115, .225, .17));
+        brow.userData.brow = side;
+        const wing = this.mesh(new THREE.SphereGeometry(.23, 6, 3), wingMat, visual, new THREE.Vector3(side * .3, .1, -.06));
+        wing.scale.set(food === 'moth' ? 2 : 1.35, .07, food === 'moth' ? 1.4 : .75); wing.userData.wing = side;
+        if (food === 'moth') this.mesh(new THREE.SphereGeometry(.065, 6, 4), material('#9f7958'), wing, new THREE.Vector3(side * .06, .03, 0));
+        for (let j = 0; j < 2; j++) {
+          const leg = this.mesh(new THREE.CylinderGeometry(.014, .014, .17, 4), this.mats.dark, visual, new THREE.Vector3(side * .16, -.14, j ? -.1 : .1));
+          leg.rotation.z = side * .7;
+          leg.userData.leg = side; leg.userData.offset = j;
+        }
+      }
+      const mouth = this.mesh(new THREE.SphereGeometry(.052, 8, 6), this.mats.dark, visual, new THREE.Vector3(0, -.015, .235));
+      mouth.userData.mouth = true;
+      const sweat = this.mesh(new THREE.ConeGeometry(.043, .13, 6), this.mats.white, visual, new THREE.Vector3(.24, .2, .15));
+      sweat.userData.sweat = true; sweat.visible = false;
     }
-    const mouth = this.mesh(new THREE.SphereGeometry(.052, 8, 6), this.mats.dark, group, new THREE.Vector3(0, -.015, .235));
-    mouth.userData.mouth = true;
-    const sweat = this.mesh(new THREE.ConeGeometry(.043, .13, 6), this.mats.white, group, new THREE.Vector3(.24, .2, .15));
-    sweat.userData.sweat = true; sweat.visible = false;
     if (a.recovery) {
       const halo = this.mesh(new THREE.TorusGeometry(.35, .012, 4, 20), material('#cce3a8'), group);
       halo.rotation.x = Math.PI / 2;
@@ -473,7 +548,8 @@ export class Garden {
   }
 
   private platform(p: Platform, naturalSupports = false): void {
-    const root = new THREE.Group(); root.position.copy(V(p.position)); this.world.add(root);
+    const root = new THREE.Group(); root.name = `platform-${p.id}`; root.userData.platformId = p.id;
+    root.position.copy(V(p.position)); this.world.add(root); this.platformRoots.set(p.id, root);
     if (p.rotation) root.rotation.set(p.rotation.x,p.rotation.y,p.rotation.z);
     if (p.form) {
       this.landform(p, root);
@@ -531,6 +607,7 @@ export class Garden {
       }
       pondGeometry.rotateX(-Math.PI / 2); pondGeometry.computeVertexNormals();
       const pond = this.mesh(pondGeometry, this.mats.water, root, new THREE.Vector3(-6, .33, -4));
+      pond.name = 'procedural-pond-water'; this.pondDecoration.push(pond);
       pond.receiveShadow = true;
       const shoreGeometry = new THREE.TorusGeometry(6.76, .24, 5, 48);
       const shorePositions = shoreGeometry.getAttribute('position');
@@ -541,10 +618,12 @@ export class Garden {
       }
       shoreGeometry.computeVertexNormals();
       const shore = this.mesh(shoreGeometry, material('#b6ae81'), root, new THREE.Vector3(-6, .28, -4));
+      shore.name = 'procedural-pond-shore'; this.pondDecoration.push(shore);
       shore.rotation.x = Math.PI / 2;
       const lilyMaterial = material('#789d4f');
       for (const [x, z, size, angle] of [[-7.5, -5.1, .82, .4], [-4.2, -6.4, .64, 2.2], [-8.3, -2.4, .54, 4.1]] as const) {
         const lily = this.mesh(new THREE.CircleGeometry(size, 12, .18, Math.PI * 1.78), lilyMaterial, root, new THREE.Vector3(x, .355, z));
+        lily.name = 'procedural-pond-lily'; this.pondDecoration.push(lily);
         lily.rotation.x = -Math.PI / 2; lily.rotation.z = angle;
       }
       return;
@@ -743,15 +822,161 @@ export class Garden {
     geo.rotateX(-Math.PI / 2); geo.translate(0, -(size.y - .08) / 2, 0); return geo;
   }
 
-  load(course: Course): void {
+  private fittedAsset(assetId: string, dimension: number, mode: 'largest' | 'horizontal', align: 'center' | 'ground'): THREE.Group | null {
+    const source = this.modelAssets.get(assetId);
+    if (!source) return null;
+    const object = cloneSkinned(source.scene) as THREE.Group;
+    object.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(object);
+    const size = bounds.getSize(new THREE.Vector3()), center = bounds.getCenter(new THREE.Vector3());
+    const measure = mode === 'horizontal' ? Math.max(size.x, size.z) : Math.max(size.x, size.y, size.z);
+    if (measure < .0001) return null;
+    const scale = dimension / measure;
+    object.scale.setScalar(scale);
+    object.position.set(-center.x * scale, (align === 'ground' ? -bounds.min.y : -center.y) * scale, -center.z * scale);
+    object.updateMatrixWorld(true);
+    object.traverse(child => {
+      if (child instanceof THREE.Mesh || child instanceof THREE.SkinnedMesh) {
+        child.userData.sharedAsset = true;
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    return object;
+  }
+
+  private placeScenery(assetId: string, position: Vec, width: number, yaw = 0): THREE.Group | null {
+    const visual = this.fittedAsset(assetId, width, 'horizontal', 'ground');
+    if (!visual) return null;
+    const placement = new THREE.Group(); placement.name = `asset-placement-${assetId}`;
+    placement.position.copy(V(position)); placement.rotation.y = yaw; placement.add(visual); this.world.add(placement);
+    placement.traverse(object => {
+      if (object instanceof THREE.Mesh || object instanceof THREE.SkinnedMesh) this.collisionMeshes.push(object);
+    });
+    return placement;
+  }
+
+  private landscapeHeightAt(land: NonNullable<Course['landscapes']>[number], x: number, z: number): number {
+    const resolution = land.resolution, stride = resolution + 1;
+    const gx = clamp((x - land.position.x) / land.size.x + .5, 0, 1) * resolution;
+    const gz = clamp((z - land.position.z) / land.size.z + .5, 0, 1) * resolution;
+    const x0 = Math.min(resolution - 1, Math.floor(gx)), z0 = Math.min(resolution - 1, Math.floor(gz));
+    const fx = gx - x0, fz = gz - z0;
+    const h00 = land.heights[x0 * stride + z0], h10 = land.heights[(x0 + 1) * stride + z0];
+    const h01 = land.heights[x0 * stride + z0 + 1], h11 = land.heights[(x0 + 1) * stride + z0 + 1];
+    return land.position.y + THREE.MathUtils.lerp(THREE.MathUtils.lerp(h00, h10, fx), THREE.MathUtils.lerp(h01, h11, fx), fz);
+  }
+
+  private installFrogAsset(): boolean {
+    if (this.frogAssetRoot) return true;
+    const source = this.modelAssets.get('frog-hero');
+    if (!source) return false;
+    const model = this.fittedAsset('frog-hero', 1.75, 'largest', 'center');
+    if (!model) return false;
+    const root = new THREE.Group(); root.name = 'frog-hero-glb'; root.rotation.y = Math.PI;
+    root.add(model); this.frog.add(root); this.frogAssetRoot = root; this.frogBody.visible = false;
+    this.frogMixer = new THREE.AnimationMixer(model);
+    this.frogActions.clear(); this.activeFrogAction = '';
+    for (const clip of source.animations) this.frogActions.set(clip.name, this.frogMixer.clipAction(clip));
+    this.canvas.dataset.frogAsset = 'frog_hero_lowpoly.glb';
+    this.playFrogAction('Frog_Idle', 0);
+    return true;
+  }
+
+  private playFrogAction(name: string, fade = .12): void {
+    const action = this.frogActions.get(name);
+    if (!action || this.activeFrogAction === name) return;
+    const previous = this.frogActions.get(this.activeFrogAction);
+    action.reset(); action.setLoop(THREE.LoopRepeat, Infinity); action.fadeIn(fade).play();
+    if (previous) previous.fadeOut(fade);
+    this.activeFrogAction = name;
+    this.canvas.dataset.frogAnimation = name;
+  }
+
+  private installFoodAssets(course: Course): number {
+    let count = 0;
+    for (const anchor of course.anchors) {
+      const food = anchor.food ?? 'fly', fly = this.flies.get(anchor.id);
+      const model = this.fittedAsset(FOOD_MODELS[food], FOOD_MODEL_SIZES[food], 'largest', 'center');
+      if (!fly || !model) continue;
+      model.name = `food-model-${food}`;
+      model.traverse(object => {
+        if (!(object instanceof THREE.Mesh)) return;
+        const lowerName = object.name.toLowerCase();
+        if (lowerName.includes('wing')) {
+          const side = Math.sign(object.position.x) || (lowerName.includes('left') || lowerName.endsWith('l') ? -1 : 1);
+          object.userData.wing = side;
+          object.userData.baseWingRotation = object.rotation.z;
+        }
+      });
+      (fly.userData.assetFallback as THREE.Group | undefined)?.traverse(object => {
+        if (object instanceof THREE.Mesh && !object.userData.sharedAsset) object.visible = false;
+      });
+      const fallback = fly.userData.assetFallback as THREE.Group | undefined;
+      if (fallback) fallback.visible = false;
+      fly.add(model); fly.userData.modelAsset = FOOD_MODELS[food]; count++;
+    }
+    return count;
+  }
+
+  private installEcosystemAssets(course: Course): number {
+    if (!course.biomes || course.id !== 'ecosystem-main-v3') return 0;
+    const land = course.landscapes?.find(item => item.zone === 0);
+    const pads = new Map(course.platforms.map(platform => [platform.id, platform]));
+    const atGround = (x: number, z: number) => land ? this.landscapeHeightAt(land, x, z) : 0;
+    const atPad = (id: string, dx = 0, dz = 0): Vec | null => {
+      const pad = pads.get(id); if (!pad) return null;
+      return { x: pad.position.x + dx, y: pad.position.y + pad.size.y / 2, z: pad.position.z + dz };
+    };
+    let count = 0;
+    const place = (asset: string, position: Vec | null, width: number, yaw = 0) => {
+      if (!position) return;
+      if (this.placeScenery(asset, position, width, yaw)) count++;
+    };
+
+    // The authored pond bank replaces the old flat water disk and ring. The gameplay
+    // terrain mesh remains underneath as the actual collision/camera surface.
+    if (land) {
+      place('pond-basin', { x: -6, y: atGround(-6, -4), z: -4 }, 9.3, -.12);
+      this.pondDecoration.forEach(object => { object.visible = false; });
+      place('pond-lilies', { x: -6.8, y: atGround(-6.8, -4.2) + .22, z: -4.2 }, 2.7, .35);
+      place('pond-reed', { x: -11, y: atGround(-11, -1.2), z: -1.2 }, 3.3, .28);
+      place('pond-stones', { x: -10.5, y: atGround(-10.5, -7), z: -7 }, 3.4, -.42);
+      place('pond-root-bridge', { x: -1.8, y: atGround(-1.8, 1.8), z: 1.8 }, 5.1, -.3);
+      const grass = [
+        ['meadow-grass-a', -11, 5], ['meadow-grass-b', 10.5, -10],
+        ['meadow-grass-c', 10.2, 8.5], ['meadow-grass-a', -3.6, -11],
+      ] as const;
+      for (const [asset, x, z] of grass) place(asset, { x, y: atGround(x, z), z }, 1.9, x * .17 + z * .11);
+    }
+
+    const firstLeaf = atPad('pad-1');
+    if (firstLeaf) { firstLeaf.y -= .015; place('pond-leaf', firstLeaf, 4.35, .08); }
+    place('meadow-mushrooms', atPad('basin-grass', 5.5, 2.2), 3.1, .25);
+    place('meadow-flower-patch', atPad('basin-grass', -5.1, 2.1), 4.2, -.25);
+    place('meadow-boulders', atPad('basin-rocks', 1.05, 3.2), 3.5, .32);
+
+    // One large flower grows above the authored crown as its central landmark.
+    place('meadow-flower', { x: 47, y: 82.7, z: -31 }, 4.6, .15);
+    place('upper-branch', atPad('pad-18'), 6.2, .14);
+    place('upper-ridge', atPad('pad-24'), 6.5, -.18);
+    place('upper-clouds', atPad('pad-29'), 7.1, .12);
+    place('upper-star', atPad('summit'), 7.7, .05);
+    return count;
+  }
+
+  async load(course: Course): Promise<void> {
+    const loadVersion = ++this.modelLoadVersion;
+    this.canvas.dataset.assetState = 'loading';
     this.canvas.dataset.course=course.id;
     this.clearCameraFades();
     this.world.traverse(o => {
-      if ((o instanceof THREE.Mesh || o instanceof THREE.Points) && !this.grassShapes.includes(o.geometry)) o.geometry.dispose();
+      if ((o instanceof THREE.Mesh || o instanceof THREE.Points) && !this.grassShapes.includes(o.geometry) && !o.userData.sharedAsset) o.geometry.dispose();
     });
     this.ownedMaterials.forEach(m => m.dispose()); this.ownedMaterials.clear();
     this.scene.remove(this.world); this.world = new THREE.Group(); this.scene.add(this.world);
     this.flies.clear(); this.collisionMeshes.length = 0; this.waterSurfaces.length = 0;
+    this.platformRoots.clear(); this.pondDecoration.length = 0;
     this.biomeColors = course.biomes?.map(b => b.color) ?? [];
     this.skyColors = course.biomes?.map(b => new THREE.Color(b.sky)) ?? [];
     this.skyZenithColors = course.biomes?.map(b => {
@@ -838,6 +1063,16 @@ export class Garden {
     this.sceneReady = false; this.yaw = .52; this.renderedYaw = .52; this.pitch = course.mode === 'main' ? .18 : .36; this.distance = course.route ? 12 : 8;
     this.landing = -1; this.missUntil = 0;
     this.hopPhase = 0; this.lastAnimationTime = 0;
+    await this.modelAssetsReady;
+    if (loadVersion !== this.modelLoadVersion) return;
+    const heroInstalled = this.installFrogAsset();
+    const foodsInstalled = this.installFoodAssets(course);
+    const sceneryInstalled = this.installEcosystemAssets(course);
+    if (!heroInstalled) this.canvas.dataset.frogAsset = 'procedural-fallback';
+    this.canvas.dataset.foodAssets = String(foodsInstalled);
+    this.canvas.dataset.ecologyAssets = String(sceneryInstalled);
+    this.canvas.dataset.assetState = 'ready';
+    this.canvas.dataset.assetInstances = String((heroInstalled ? 1 : 0) + foodsInstalled + sceneryInstalled);
   }
 
   resize(): void {
@@ -892,6 +1127,9 @@ export class Garden {
     }
     const dashState = sim.dash;
     const strong = dashState?.kind === 'launch';
+    const frogAction = dashState ? 'Frog_Dash' : !sim.grounded || running ? 'Frog_Jump' : 'Frog_Idle';
+    this.playFrogAction(frogAction);
+    this.frogMixer?.update(animationDt);
     const dash = dashState ? clamp(dashState.remaining / (strong ? dashState.duration ?? DASH_CONFIG.launchDuration : DASH_CONFIG.duration), 0, 1) : 0;
     const launchProgress = strong && dashState?.distance ? clamp((dashState.travelled ?? 0) / dashState.distance, 0, 1) : 0;
     const launchStroke = Math.sin(launchProgress * Math.PI);
@@ -991,7 +1229,9 @@ export class Garden {
       foot.rotation.z = THREE.MathUtils.lerp(foot.rotation.z, side * (running ? -.12 : 0), Math.min(1, animationDt * 12));
     });
     this.frog.updateMatrixWorld(true);
-    const mouth = this.frogBody.localToWorld(new THREE.Vector3(0, -.075 - open * .035, .78));
+    const mouth = this.frogAssetRoot
+      ? this.frog.localToWorld(new THREE.Vector3(0, .015 - open * .025, .76))
+      : this.frogBody.localToWorld(new THREE.Vector3(0, -.075 - open * .035, .78));
     for (const [id, fly] of this.flies) {
       const a = fly.userData.anchor as Anchor;
       const point = sim.anchorPosition(id)!;
@@ -1003,7 +1243,8 @@ export class Garden {
       const launchPull = strong && dashState?.anchor === id;
       const struggling = sim.attached === id || life.phase === 'retracting' || launchPull;
       fly.traverse(child => {
-        if (child.userData.wing) child.rotation.z = child.userData.wing * (Math.sin(now * (struggling ? 96 : 42)) * (struggling ? .85 : .5) + (struggling ? Math.sin(now * 37) * .18 : 0));
+        if (child.userData.wing) child.rotation.z = Number(child.userData.baseWingRotation ?? 0)
+          + child.userData.wing * (Math.sin(now * (struggling ? 96 : 42)) * (struggling ? .85 : .5) + (struggling ? Math.sin(now * 37) * .18 : 0));
         if (child.userData.pupil) { child.scale.setScalar(struggling ? .63 : 1); child.position.y = struggling ? .035 : .018; }
         if (child.userData.brow) child.rotation.z = child.userData.brow * (struggling ? -.5 : .08);
         if (child.userData.leg) child.rotation.x = struggling ? Math.sin(now * 29 + child.userData.offset * 2) * .9 : .05;

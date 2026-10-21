@@ -19,7 +19,7 @@ async function boot(): Promise<void> {
   const audio = new Audio();
   const ui = new Interface(document.querySelector('#ui')!, store.settings); ui.captureTitle();
   let sim = new Simulation(makeCourse('main'));
-  garden.load(sim.course);
+  await garden.load(sim.course);
   let state: Session = 'menu';
   let accumulator = 0, lastFrame = performance.now(), lastSave = 0;
   let awaitingGrip = false, starting = false, ignoreSaveError = false;
@@ -67,7 +67,7 @@ async function boot(): Promise<void> {
       if (sim.course.mode === 'main' && mode === 'training' && sim.time > 0) await save();
       const next = new Simulation(saved ? courseForSave(saved) : makeCourse(mode));
       if (saved) next.restore(saved);
-      sim.dispose(); sim = next; garden.load(sim.course);
+      sim.dispose(); sim = next; await garden.load(sim.course);
       lastSave = sim.time; lastZone = sim.zone; ignoreSaveError = false;
       seenMoving = false; seenSpring = false;
       reachedRefuges.clear(); currentRefuge = undefined;
@@ -118,7 +118,7 @@ async function boot(): Promise<void> {
         }
         if (await store.load() && !confirm('가져온 진행과 설정으로 바꿀까요? 현재 진행은 이전 기록으로 보관됩니다.')) return;
         await store.importBackup(backup); applySettings(); ui.syncSettings(store.settings);
-        sim.dispose(); sim = new Simulation(makeCourse('main')); garden.load(sim.course);
+        sim.dispose(); sim = new Simulation(makeCourse('main')); await garden.load(sim.course);
         input.active = false; input.clear(); accumulator = 0; awaitingGrip = false;
         state = 'menu'; ui.saved = await store.load(); ui.show('menu', sim);
         alert('저장을 가져왔습니다. 계속 오르기를 눌러 이어서 플레이하세요.');

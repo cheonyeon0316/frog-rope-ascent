@@ -18,7 +18,8 @@
     "test:transfer": "node tools/browser-transfer-playtest.mjs",
     "test:refuges": "node tools/browser-refuge-playtest.mjs",
     "test:ecosystem": "node tools/browser-ecosystem-playtest.mjs",
-    "test:launch": "node tools/browser-launch-playtest.mjs"
+    "test:launch": "node tools/browser-launch-playtest.mjs",
+    "test:assets": "node tools/browser-assets-playtest.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.21.0",
