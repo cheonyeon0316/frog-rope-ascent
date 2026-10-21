@@ -1,0 +1,11 @@
+{
+  "scenario": "flower-biome transition preserves camera and W direction",
+  "course": "ecosystem-main-v3",
+  "sample": {
+    "cameraYaw": 0.4954,
+    "movementYaw": 0.4954,
+    "inputX": -0.4754,
+    "inputZ": -0.8798
+  },
+  "errors": []
+}

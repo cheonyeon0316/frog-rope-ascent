@@ -1,4 +1,4 @@
-# 혀끝까지 — Windows 이전 패키지
+# Tongumble — Windows 이전 패키지
 
 ## 새 PC에서 바로 플레이
 

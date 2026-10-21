@@ -20,9 +20,9 @@
           "start": 15,
           "end": 35,
           "center": {
-            "x": 18,
+            "x": 16,
             "y": 15,
-            "z": -4
+            "z": -3
           },
           "kind": "grass",
           "foods": [
@@ -35,9 +35,9 @@
         "target": {
           "id": "food-basin-grass",
           "position": {
-            "x": 18,
+            "x": 16,
             "y": 17.8,
-            "z": -4
+            "z": -3
           },
           "zone": 1,
           "recovery": true,
@@ -45,13 +45,13 @@
         },
         "name": "초파리",
         "position": {
-          "x": 18,
+          "x": 16,
           "y": 19,
-          "z": -4
+          "z": -3
         }
       },
       "state": {
-        "height": 15.04,
+        "height": 14.9,
         "refuge": "",
         "biome": "grass",
         "attached": ""
@@ -98,7 +98,7 @@
         }
       },
       "state": {
-        "height": 35.17,
+        "height": 34.88,
         "refuge": "",
         "biome": "rocks",
         "attached": ""
@@ -145,7 +145,7 @@
         }
       },
       "state": {
-        "height": 59.9,
+        "height": 59.86,
         "refuge": "",
         "biome": "flower",
         "attached": ""
@@ -192,7 +192,7 @@
         }
       },
       "state": {
-        "height": 90.05,
+        "height": 89.87,
         "refuge": "",
         "biome": "tree",
         "attached": ""
@@ -239,7 +239,7 @@
         }
       },
       "state": {
-        "height": 120.07,
+        "height": 119.88,
         "refuge": "",
         "biome": "mountain",
         "attached": ""
@@ -285,7 +285,7 @@
         }
       },
       "state": {
-        "height": 144.91,
+        "height": 144.9,
         "refuge": "",
         "biome": "clouds",
         "attached": ""
@@ -331,7 +331,7 @@
         }
       },
       "state": {
-        "height": 164.91,
+        "height": 164.88,
         "refuge": "",
         "biome": "stars",
         "attached": ""

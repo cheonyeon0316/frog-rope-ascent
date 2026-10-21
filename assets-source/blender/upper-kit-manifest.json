@@ -1,0 +1,38 @@
+{
+  "pack": "eco-upper-first-pass",
+  "units": "metres",
+  "status": "first-pass-review",
+  "assets": [
+    {
+      "id": "mdl_env_old_tree_branch",
+      "name": "오래된 나무 가지 발판",
+      "file": "public/assets/eco-upper/mdl_env_old_tree_branch.glb",
+      "purpose": "굵은 가지와 갈라진 뿌리, 드문 잎 덩이가 이어지는 착지 발판",
+      "objectCount": 13
+    },
+    {
+      "id": "mdl_env_mountain_ridge",
+      "name": "금 간 암릉 발판",
+      "file": "public/assets/eco-upper/mdl_env_mountain_ridge.glb",
+      "purpose": "서로 이어진 단단한 암석과 옅은 이끼 띠가 만든 불규칙 능선",
+      "objectCount": 10
+    },
+    {
+      "id": "mdl_env_cloud_shelf",
+      "name": "구름 발판 군락",
+      "file": "public/assets/eco-upper/mdl_env_cloud_shelf.glb",
+      "purpose": "겹쳐진 부드러운 구름 덩이가 넓고 안정된 착지 면을 형성",
+      "objectCount": 7
+    },
+    {
+      "id": "mdl_env_starway_platform",
+      "name": "별길 오각 발판",
+      "file": "public/assets/eco-upper/mdl_env_starway_platform.glb",
+      "purpose": "두꺼운 오각별 발판과 주변을 도는 작은 빛 알갱이",
+      "objectCount": 5
+    }
+  ],
+  "notes": [
+    "Tree, mountain, cloud and star landmark assets; collision and gameplay placement remain course data."
+  ]
+}

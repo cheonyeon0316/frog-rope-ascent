@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-const output = new URL('../playtest/', import.meta.url); await mkdir(output, { recursive: true });
+const output = new URL(`../playtest/${process.env.PLAYTEST_OUTPUT ?? ''}`, import.meta.url); await mkdir(output, { recursive: true });
 const browser = await chromium.launch(launchOptions);
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
 const results = [], errors = [];

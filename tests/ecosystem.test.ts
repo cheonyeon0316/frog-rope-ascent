@@ -31,14 +31,14 @@ it('lets transition failures lose the new ecosystem and land in an earlier one',
     const s = new Simulation(makeCourse('main')), previous = biomes[zone - 1], current = biomes[zone];
     // Choose an open shaft into the earlier basin, avoiding an intervening branch edge.
     let column: { x: number; y: number; z: number } | undefined;
-    for (const x of [-3, -1.5, 0, 1.5, 3]) for (const z of [-3, -1.5, 0, 1.5, 3]) {
+    for (const x of [0,-2,2,-4,4,-6,6]) for (const z of [0,-2,2,-4,4,-6,6]) {
       const p = vec(previous.center.x + x, current.start + 8, previous.center.z + z);
       const clear = [vec(), vec(.45, 0, 0), vec(-.45, 0, 0), vec(0, 0, .45), vec(0, 0, -.45)].every(o => {
         const hit = s.world.castRay(new RAPIER.Ray(vec(p.x + o.x, p.y, p.z + o.z), vec(0, -1, 0)), 100, true, undefined, undefined, s.collider, s.body);
         const height = hit ? p.y - hit.timeOfImpact : -10;
-        return height > previous.start && height < previous.start + 1;
+        return height > previous.start && height < current.start - 2;
       });
-      if (clear) column = p;
+      if (clear && !column) column = p;
     }
     expect(column, `open transition shaft ${current.id}`).toBeDefined();
     s.body.setTranslation(column!, true);

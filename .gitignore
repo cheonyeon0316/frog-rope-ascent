@@ -2,3 +2,10 @@ node_modules/
 dist/
 .vite/
 playtest/*.tmp
+*.blend1
+playtest/tongumble-debug/
+playtest/tongumble-ecosystem/
+playtest/tongumble-launch/
+playtest/camera-controls-flower.png
+playtest/camera-controls-playtest.json
+playtest/level-rebuild/launch-failure.png

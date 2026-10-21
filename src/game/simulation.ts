@@ -1,19 +1,36 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { vec, length, distance, clamp, type Vec, type Course, type Controls, type Anchor, type GameEvent, type SaveState, type FlyLife, type DashState } from './types';
-import { movingAnchorPosition, waterAt, WATER_CONFIG, rockHull, cylinderRotation, landscapeMesh, starMesh, cloudClumps } from './environment';
+import { movingAnchorPosition, waterAt, WATER_CONFIG, rockHull, cylinderRotation, landscapeMesh, starMesh, cloudClumps, platformMesh, platformRotation } from './environment';
 
 export const DT = 1 / 120;
 export const CONFIG = { gravity: 18, range: 10, minRange: .75, aimAngle: 8, swingAccel: 12, airAccel: 2.5, inputSpeed: 14, jump: 7.5 };
 export const FLY_TIMING = { retract: .32, swallow: .22, respawn: 3, appear: .25 };
-export const DASH_CONFIG = { boost: 3.5, duration: .16, maxBoostedSpeed: 16, launchSpeed: 8, launchDuration: .3, launchMinDuration: .1, launchMaxDuration: 1.7, launchCruiseSpeed: 7.2, launchArrivalSpeed: 3, launchBrakeStart: .68, launchGravityAssist: .5, launchTangent: .5, launchMaxSpeed: 16 };
+export const DASH_CONFIG = { boost: 3.5, duration: .16, maxBoostedSpeed: 16, launchSpeed: 8, launchDuration: .3, launchMinDuration: .1, launchMaxDuration: 1.7, launchCruiseSpeed: 7.2, launchArrivalSpeed: 3, launchBrakeStart: .68, launchMaxSpeed: 16 };
 const copy = (p: Vec): Vec => vec(p.x, p.y, p.z);
+function launchCurve(t: number, duration: number, distance: number) {
+  const start = DASH_CONFIG.launchSpeed * duration / distance;
+  const end = DASH_CONFIG.launchArrivalSpeed * duration / distance;
+  const a = -2 + start + end, b = 3 - 2 * start - end, c = start;
+  const progress = ((a * t + b) * t + c) * t;
+  return { progress, rate: (3 * a * t * t + 2 * b * t + c) / duration };
+}
+function launchPathVelocity(origin: Vec, destination: Vec, t: number, duration: number, distance: number): Vec {
+  const { progress, rate } = launchCurve(t, duration, distance);
+  const arc = clamp(distance * .12, .3, 1.1);
+  return vec((destination.x - origin.x) * rate,
+    (destination.y - origin.y) * rate + 4 * arc * (1 - 2 * progress) * rate,
+    (destination.z - origin.z) * rate);
+}
 
 export class Simulation {
   readonly world: RAPIER.World;
   readonly body: RAPIER.RigidBody;
   readonly collider: RAPIER.Collider;
   private anchors = new Map<string, { definition: Anchor; body: RAPIER.RigidBody }>();
+  private anchorTouchSensors = new Map<string, RAPIER.Collider>();
+  private touchingAnchors = new Set<string>();
   private joint: RAPIER.ImpulseJoint | null = null;
+  private surfaces = new Map<number, Course['platforms'][number]>();
   private footProbe = new RAPIER.Ball(.28);
   private eatenFlies = new Map<string, number>();
   private dashUntil = 0;
@@ -21,8 +38,10 @@ export class Simulation {
   private dashKind: 'release' | 'launch' = 'release';
   private launchDistance = 0;
   private launchTravelled = 0;
+  private launchElapsed = 0;
   private launchDuration = DASH_CONFIG.launchDuration;
-  private launchPosition: Vec | null = null;
+  private launchStart: Vec | null = null;
+  private launchEnd: Vec | null = null;
   private launchTarget: string | null = null;
   private previousWater: string | null = null;
   private anchorPhases = new Map<string, number>();
@@ -48,7 +67,13 @@ export class Simulation {
     this.world.timestep = DT;
     this.world.integrationParameters.numSolverIterations = 12;
     for (const p of course.platforms) {
-      const rigid = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(p.position.x, p.position.y, p.position.z));
+      const rigid = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(p.position.x, p.position.y, p.position.z).setRotation(platformRotation(p.rotation)));
+      if (p.form) {
+        const data = platformMesh(p);
+        const collider = this.world.createCollider(RAPIER.ColliderDesc.trimesh(data.vertices, data.indices).setFriction(.65), rigid);
+        this.surfaces.set(collider.handle, p);
+        continue;
+      }
       if (p.kind === 'cloud' && !p.refuge) {
         for (const clump of cloudClumps(p.size)) this.world.createCollider(RAPIER.ColliderDesc.convexHull(rockHull(clump.size))!
           .setTranslation(clump.position.x, clump.position.y, clump.position.z).setFriction(.65), rigid);
@@ -83,7 +108,13 @@ export class Simulation {
     for (const a of course.anchors) {
       const p = movingAnchorPosition(a, 0);
       const description = a.motion ? RAPIER.RigidBodyDesc.kinematicPositionBased() : RAPIER.RigidBodyDesc.fixed();
-      this.anchors.set(a.id, { definition: a, body: this.world.createRigidBody(description.setTranslation(p.x, p.y, p.z)) });
+      const body = this.world.createRigidBody(description.setTranslation(p.x, p.y, p.z));
+      // Food is a sensor: frog-body contact is registered without bumping the
+      // flight or making the edible anchor obstruct its own tongue ray.
+      const radius = a.food === 'bee' || a.food === 'moth' ? .34 : .28;
+      const touch = this.world.createCollider(RAPIER.ColliderDesc.ball(radius).setSensor(true), body);
+      this.anchorTouchSensors.set(a.id, touch);
+      this.anchors.set(a.id, { definition: a, body });
       if (a.motion) this.anchorPhases.set(a.id, 0);
     }
     this.body = this.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(course.start.x, course.start.y, course.start.z)
@@ -110,6 +141,18 @@ export class Simulation {
   get refuge() {
     if (!this.grounded) return undefined;
     const p = this.position;
+    if (this.course.route) {
+      const hit = this.world.castRay(new RAPIER.Ray(p, vec(0,-1,0)), .8, true, undefined, undefined, this.collider, this.body);
+      const surface = hit && this.surfaces.get(hit.collider.handle);
+      if (surface?.refuge) return surface;
+      // A route leaf can sit just above a broad recovery landform. Treat that
+      // shallow overlap as the same safe ecosystem floor when the frog lands on it.
+      if (surface) return this.course.platforms.find(refuge => refuge.refuge && refuge.zone === surface.zone
+        && Math.abs(p.x - refuge.position.x) <= refuge.size.x / 2
+        && Math.abs(p.z - refuge.position.z) <= refuge.size.z / 2
+        && Math.abs((surface.position.y + surface.size.y / 2) - (refuge.position.y + refuge.size.y / 2)) <= .75);
+      return undefined;
+    }
     const land = this.course.landscapes?.find(l => Math.abs(p.x - l.position.x) <= l.size.x / 2
       && Math.abs(p.z - l.position.z) <= l.size.z / 2 && p.y >= l.position.y - 3.5 && p.y < l.position.y + 4.5);
     if (land) return this.course.platforms.find(surface => surface.refuge && surface.zone === land.zone);
@@ -127,7 +170,8 @@ export class Simulation {
   get dash(): DashState | undefined {
     const remaining = this.dashUntil - this.time;
     return remaining > 0 ? { remaining, direction: copy(this.dashDirection), kind: this.dashKind,
-      ...(this.dashKind === 'launch' && this.launchDistance > 0 ? { duration: this.launchDuration, distance: this.launchDistance, travelled: this.launchTravelled, anchor: this.launchTarget ?? undefined } : {}) } : undefined;
+      ...(this.dashKind === 'launch' && this.launchDistance > 0 ? { duration: this.launchDuration, distance: this.launchDistance, travelled: this.launchTravelled, anchor: this.launchTarget ?? undefined,
+        ...(this.launchStart && this.launchEnd ? { origin: copy(this.launchStart), targetPosition: copy(this.launchEnd) } : {}) } : {}) } : undefined;
   }
 
   flyLife(id: string): FlyLife {
@@ -141,7 +185,7 @@ export class Simulation {
     const d = distance(a, b);
     if (d < .02) return false;
     const dir = vec((b.x - a.x) / d, (b.y - a.y) / d, (b.z - a.z) / d);
-    return this.world.castRay(new RAPIER.Ray(a, dir), Math.max(0, d - .04), true, undefined, undefined, this.collider, this.body) !== null;
+    return this.world.castRay(new RAPIER.Ray(a, dir), Math.max(0, d - .04), true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, this.collider, this.body) !== null;
   }
 
   selectTarget(camera: Vec, direction: Vec, assisted = false): Anchor | null {
@@ -176,7 +220,7 @@ export class Simulation {
     return true;
   }
 
-  release(reason: 'manual' | 'launch' | 'blocked' | 'reset' | 'restore' = 'manual'): void {
+  release(reason: 'manual' | 'launch' | 'blocked' | 'reset' | 'restore' = 'manual', duringStep = false): void {
     if (!this.joint) return;
     const fly = this.anchor;
     // Removing the rope preserves swing velocity. Only a deliberate eat adds a short impulse.
@@ -192,17 +236,17 @@ export class Simulation {
           const n = vec((fly.position.x - p.x) / d, (fly.position.y - p.y) / d, (fly.position.z - p.z) / d);
           const speed = length(v), toward = v.x * n.x + v.y * n.y + v.z * n.z;
           if (reason === 'launch') {
-            // Guide the frog to the eaten fly's position; the duration scales with that distance.
-            const tangent = vec((v.x - n.x * toward) * DASH_CONFIG.launchTangent, (v.y - n.y * toward) * DASH_CONFIG.launchTangent, (v.z - n.z * toward) * DASH_CONFIG.launchTangent);
-            const travelDistance = d;
-            const averageSpeed = DASH_CONFIG.launchCruiseSpeed * .9;
-            const desiredSpeed = clamp(travelDistance / averageSpeed, DASH_CONFIG.launchMinDuration, DASH_CONFIG.launchMaxDuration);
-            const limit = Math.sqrt(DASH_CONFIG.launchMaxSpeed ** 2 - Math.min(DASH_CONFIG.launchMaxSpeed, DASH_CONFIG.launchSpeed) ** 2);
-            const scale = Math.min(1, limit / Math.max(.001, length(tangent)));
-            this.body.setLinvel(vec(n.x * DASH_CONFIG.launchSpeed + tangent.x * scale, n.y * DASH_CONFIG.launchSpeed + tangent.y * scale, n.z * DASH_CONFIG.launchSpeed + tangent.z * scale), true);
-            this.dashKind = 'launch'; this.dashDirection = n; this.dashUntil = this.time + desiredSpeed;
-            this.launchDistance = travelDistance; this.launchTravelled = 0; this.launchDuration = desiredSpeed; this.launchPosition = p; this.launchTarget = this.attached;
-            this.events.push({ type: 'dash', position: p, anchor: this.attached, speed: DASH_CONFIG.launchSpeed, reason: 'launch' });
+            // Use a quick, shallow arc with a soft arrival speed. The curved path reads
+            // as a tongue-led leap without suspending the frog on a straight rail.
+            const flightTime = clamp(d / (DASH_CONFIG.launchCruiseSpeed * .9), DASH_CONFIG.launchMinDuration, DASH_CONFIG.launchMaxDuration);
+            const destination = copy(fly.position);
+            const launchVelocity = launchPathVelocity(p, destination, 0, flightTime, d);
+            const launchSpeed = length(launchVelocity);
+            this.body.setLinvel(launchVelocity, true);
+            this.dashKind = 'launch'; this.dashDirection = vec(launchVelocity.x / launchSpeed, launchVelocity.y / launchSpeed, launchVelocity.z / launchSpeed); this.dashUntil = this.time + flightTime - (duringStep ? DT : 0);
+            this.launchDistance = d; this.launchTravelled = 0; this.launchElapsed = 0; this.launchDuration = flightTime;
+            this.launchStart = copy(p); this.launchEnd = destination; this.launchTarget = this.attached;
+            this.events.push({ type: 'dash', position: p, anchor: this.attached, speed: launchSpeed, reason: 'launch' });
           } else {
             // Bound added energy without cutting an existing high-speed fall or swing.
             const limit = Math.max(DASH_CONFIG.maxBoostedSpeed, speed);
@@ -246,10 +290,11 @@ export class Simulation {
     this.tick++;
     this.time += DT;
     for (const [id, until] of this.eatenFlies) if (until <= this.time) this.eatenFlies.delete(id);
+    for (const [id, sensor] of this.anchorTouchSensors) sensor.setEnabled(this.flyLife(id).phase !== 'hidden');
     this.grounded = this.probeGround();
     this.coyote = this.grounded ? .08 : Math.max(0, this.coyote - DT);
     const launch = input.jump && !!this.attached;
-    if (launch) { this.release('launch'); this.jumpBuffer = 0; this.coyote = 0; }
+    if (launch) { this.release('launch', true); this.jumpBuffer = 0; this.coyote = 0; }
     else this.jumpBuffer = input.jump ? .08 : Math.max(0, this.jumpBuffer - DT);
     // Resolve a ground jump first so a simultaneous eat-dash adds to it instead of being overwritten.
     if (this.jumpBuffer > 0 && this.coyote > 0) {
@@ -284,6 +329,8 @@ export class Simulation {
         impulse = vec(impulse.x - v.x * k, impulse.y - v.y * k, impulse.z - v.z * k);
       }
       this.body.applyImpulse(vec(impulse.x * mass * DT, impulse.y * mass * DT, impulse.z * mass * DT), true);
+    } else if (this.launchDistance > 0 && this.dashUntil > this.time) {
+      // A target dash is committed to its arcing path; air steering resumes at arrival.
     } else if (water) {
       const gain = clamp((this.dash ? 1.5 : WATER_CONFIG.drag) * water.immersion * DT, 0, 1);
       this.body.applyImpulse(vec((ix * WATER_CONFIG.moveSpeed - v.x) * gain * mass, 0, (iz * WATER_CONFIG.moveSpeed - v.z) * gain * mass), true);
@@ -297,34 +344,32 @@ export class Simulation {
       const lift = CONFIG.gravity * water.immersion + (desired - this.velocity.y) * (this.dash ? 1.5 : WATER_CONFIG.drag) * water.immersion;
       this.body.applyImpulse(vec(0, lift * mass * DT, 0), true);
     }
-    if (this.launchPosition && this.dashUntil > this.time) {
-      const remainingTime = Math.max(DT, this.dashUntil - this.time);
-      const progress = clamp(this.launchTravelled / this.launchDistance, 0, 1);
-      const brakeProgress = clamp((progress - DASH_CONFIG.launchBrakeStart) / (1 - DASH_CONFIG.launchBrakeStart), 0, 1);
-      const easedBrake = brakeProgress * brakeProgress * (3 - 2 * brakeProgress);
-      const cruise = DASH_CONFIG.launchCruiseSpeed + (DASH_CONFIG.launchArrivalSpeed - DASH_CONFIG.launchCruiseSpeed) * easedBrake;
-      const gravityAssist = .5 * CONFIG.gravity * this.dashDirection.y * remainingTime * DASH_CONFIG.launchGravityAssist;
-      const along = clamp(cruise + gravityAssist,
-        -DASH_CONFIG.launchMaxSpeed, DASH_CONFIG.launchMaxSpeed);
-      const current = this.velocity;
-      const currentAlong = current.x * this.dashDirection.x + current.y * this.dashDirection.y + current.z * this.dashDirection.z;
-      const tangent = vec(current.x - this.dashDirection.x * currentAlong, current.y - this.dashDirection.y * currentAlong, current.z - this.dashDirection.z * currentAlong);
-      const tangentLimit = Math.sqrt(Math.max(0, DASH_CONFIG.launchMaxSpeed ** 2 - along ** 2));
-      const tangentScale = Math.min(1, tangentLimit / Math.max(.001, length(tangent)));
-      this.body.setLinvel(vec(this.dashDirection.x * along + tangent.x * tangentScale,
-        this.dashDirection.y * along + tangent.y * tangentScale, this.dashDirection.z * along + tangent.z * tangentScale), true);
+    if (this.launchDistance > 0 && this.launchStart && this.launchEnd && this.dashUntil > this.time) {
+      const t = clamp(this.launchElapsed / this.launchDuration, 0, 1);
+      const pathVelocity = launchPathVelocity(this.launchStart, this.launchEnd, t, this.launchDuration, this.launchDistance);
+      // Rapier applies gravity this step; offset it to keep the authored arc stable,
+      // then hand full gravity back as soon as the target is reached.
+      this.body.setLinvel(vec(pathVelocity.x, pathVelocity.y + CONFIG.gravity * DT, pathVelocity.z), true);
     }
     this.world.step();
-    if (this.launchPosition) {
-      const p = this.position;
-      const moved = (p.x - this.launchPosition.x) * this.dashDirection.x + (p.y - this.launchPosition.y) * this.dashDirection.y + (p.z - this.launchPosition.z) * this.dashDirection.z;
-      this.launchTravelled = clamp(this.launchTravelled + moved, 0, this.launchDistance);
-      this.launchPosition = p;
-      if (this.launchTravelled >= this.launchDistance - .035 || this.dashUntil <= this.time) {
-        // Release guidance while keeping the eased arrival velocity for a natural coast.
-        this.dashUntil = 0; this.launchPosition = null; this.launchDistance = 0; this.launchTravelled = 0; this.launchTarget = null;
+    if (this.launchDistance > 0) {
+      this.launchElapsed = Math.min(this.launchDuration, this.launchElapsed + DT);
+      const t = clamp(this.launchElapsed / this.launchDuration, 0, 1);
+      this.launchTravelled = this.launchDistance * launchCurve(t, this.launchDuration, this.launchDistance).progress;
+      if (this.dashUntil <= this.time) {
+        this.dashUntil = 0; this.launchDistance = 0; this.launchTravelled = 0; this.launchElapsed = 0;
+        this.launchStart = null; this.launchEnd = null; this.launchTarget = null;
       }
     }
+    const touching = new Set<string>();
+    for (const [id, sensor] of this.anchorTouchSensors) {
+      if (id === this.attached || this.flyLife(id).phase === 'hidden') continue;
+      if (this.world.intersectionPair(this.collider, sensor)) {
+        touching.add(id);
+        if (!this.touchingAnchors.has(id)) this.events.push({ type: 'touch', position: this.position, anchor: id, reason: 'body-contact' });
+      }
+    }
+    this.touchingAnchors = touching;
     if (this.anchor && this.blocked(this.position, this.anchor.position)) this.release('blocked');
     this.grounded = this.probeGround();
     if (this.grounded && !this.wasGrounded && this.time - this.lastLandTime > .2) {
@@ -366,8 +411,8 @@ export class Simulation {
     this.body.setLinvel(vec(), true);
     this.coyote = 0; this.jumpBuffer = 0; this.fallHold = 0; this.falling = false; this.landingHold = 0;
     this.dashUntil = 0; this.dashDirection = vec(); this.dashKind = 'release';
-    this.launchPosition = null; this.launchDistance = 0; this.launchTravelled = 0; this.launchDuration = DASH_CONFIG.launchDuration;
-    this.launchTarget = null;
+    this.launchDistance = 0; this.launchTravelled = 0; this.launchElapsed = 0; this.launchDuration = DASH_CONFIG.launchDuration;
+    this.launchStart = null; this.launchEnd = null; this.launchTarget = null;
     this.previousWater = null;
     this.events.push({ type: 'reset', position: this.position });
   }
@@ -392,6 +437,8 @@ export class Simulation {
     }
     this.eatenFlies.clear();
     for (const fly of s.eatenFlies ?? []) this.eatenFlies.set(fly.id, s.time + fly.remaining);
+    for (const [id, sensor] of this.anchorTouchSensors) sensor.setEnabled(this.flyLife(id).phase !== 'hidden');
+    this.touchingAnchors.clear();
     this.body.setTranslation(s.position, true);
     this.body.setLinvel(s.velocity, true);
     this.dashUntil = s.time + (s.dash?.remaining ?? 0);
@@ -400,7 +447,9 @@ export class Simulation {
     this.launchDistance = s.dash?.distance ?? 0;
     this.launchTravelled = s.dash?.travelled ?? 0;
     this.launchDuration = s.dash?.duration ?? DASH_CONFIG.launchDuration;
-    this.launchPosition = this.launchDistance > 0 ? this.position : null;
+    this.launchElapsed = this.launchDistance > 0 && s.dash ? this.launchDuration - s.dash.remaining : 0;
+    this.launchStart = s.dash?.origin ? copy(s.dash.origin) : null;
+    this.launchEnd = s.dash?.targetPosition ? copy(s.dash.targetPosition) : null;
     this.launchTarget = s.dash?.anchor ?? null;
     if (s.attached) {
       const a = this.anchors.get(s.attached);
@@ -427,6 +476,9 @@ export function validSave(s: unknown): s is SaveState {
     || p.dash.travelled !== undefined && (!Number.isFinite(p.dash.travelled) || p.dash.travelled < 0 || p.dash.distance === undefined || p.dash.travelled > p.dash.distance + 1e-6)
     || p.dash.duration !== undefined && (!Number.isFinite(p.dash.duration) || p.dash.duration < DASH_CONFIG.launchMinDuration || p.dash.duration > DASH_CONFIG.launchMaxDuration)
     || p.dash.anchor !== undefined && (p.dash.kind !== 'launch' || typeof p.dash.anchor !== 'string')
+    || p.dash.origin !== undefined && (p.dash.kind !== 'launch' || !v(p.dash.origin))
+    || p.dash.targetPosition !== undefined && (p.dash.kind !== 'launch' || !v(p.dash.targetPosition))
+    || (p.dash.origin === undefined) !== (p.dash.targetPosition === undefined)
     || p.dash.kind !== undefined && !['release', 'launch'].includes(p.dash.kind)
     || !v(p.dash.direction) || Math.abs(length(p.dash.direction) - 1) > .001)) return false;
   const flies = p.eatenFlies;
@@ -439,6 +491,6 @@ export function validSave(s: unknown): s is SaveState {
   return p.version === 1 && (p.mode === 'main' || p.mode === 'training') && typeof p.course === 'string' && v(p.position) && v(p.velocity)
     && [p.length, p.peak, p.time, p.tick, p.falls].every(n => Number.isFinite(n) && n >= 0) && p.length <= 10.1
     && (p.attached === null && p.length === 0 || typeof p.attached === 'string' && p.length >= .75)
-    && typeof p.finished === 'boolean' && Math.abs(p.position.x) <= (p.course === 'ecosystem-main-v2' ? 70 : 36)
-    && Math.abs(p.position.z) <= (p.course === 'ecosystem-main-v2' ? 70 : 36) && p.position.y >= -6 && p.position.y <= 200;
+    && typeof p.finished === 'boolean' && Math.abs(p.position.x) <= (['ecosystem-main-v2','ecosystem-main-v3'].includes(p.course) ? 70 : 36)
+    && Math.abs(p.position.z) <= (['ecosystem-main-v2','ecosystem-main-v3'].includes(p.course) ? 70 : 36) && p.position.y >= -6 && p.position.y <= 200;
 }

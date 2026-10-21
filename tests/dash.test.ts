@@ -70,14 +70,15 @@ it('turns a dash-rehook into a bounded pendulum that swings back', () => {
   s.dispose();
 });
 
-it('keeps each new early relay visible and within range from the preceding landing', () => {
+it('keeps early launch food visible and within range from the preceding landing', () => {
   const s = new Simulation(makeCourse('main'));
   let previous = s.course.start;
   for (let i = 1; i <= 3; i++) {
     s.body.setTranslation(previous, true); s.body.setLinvel(vec(), true);
-    expect(s.attach(`fly-${i}-relay`)).toBe(true); s.release('blocked');
+    const food=i===1?'fly-1-a':s.course.route![i-2].launch;
+    expect(s.attach(food),food).toBe(true); s.release('blocked');
     const platform = s.course.platforms.find(p => p.id === `pad-${i}`)!;
-    previous = vec(platform.position.x, platform.position.y + .55, platform.position.z);
+    previous = vec(platform.position.x, platform.position.y + platform.size.y / 2 + .4, platform.position.z);
   }
   const training = new Simulation(makeCourse('training'));
   const a = training.course.anchors[2].position, b = training.course.anchors[3].position;

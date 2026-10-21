@@ -41,8 +41,8 @@ export class Interface {
       </div>
       <section id="panel" class="overlay" aria-label="게임 메뉴">
         <div class="title-panel">
-          <div class="eyebrow"><span class="tiny-leaf"></span> A LITTLE FROG. A LONG WAY UP.</div>
-          <h1>혀끝까지<span class="title-dot">.</span></h1>
+          <div class="eyebrow"><span class="tiny-leaf"></span> FROG ASCENT</div>
+          <h1>Tongumble<span class="title-dot">.</span></h1>
           <p class="tagline">한 번 더,<br>더 높은 곳으로.</p>
           <p class="intro">연못에서 풀숲, 바위와 꽃, 나무와 구름을 넘어 별까지.<br>초파리·꽃가루·벌에 혀를 걸고, 다음 풍경으로 도약하세요.</p>
           <div class="menu-actions"><button class="primary" id="start">생태계 오르기 <span>↗</span></button><button class="secondary" id="continue" hidden>계속 오르기</button><button class="text-button" id="training">짧은 연습부터</button></div>
@@ -91,7 +91,7 @@ export class Interface {
   setSave(save: SaveState | null, available: boolean): void {
     this.saved = save;
     const button = this.panel.querySelector<HTMLButtonElement>('#continue');
-    if (button) { button.hidden = !save; if (save) button.textContent = `${save.course === 'garden-main-v1' ? '이전 정원 이어가기' : '계속 오르기'} · 최고 ${Math.floor(save.peak)}m`; }
+    if (button) { button.hidden = !save; if (save) button.textContent = `${save.course === 'garden-main-v1' ? '이전 정원 이어가기' : save.course === 'ecosystem-main-v2' ? '이전 생태계 이어가기' : '계속 오르기'} · 최고 ${Math.floor(save.peak)}m`; }
     if (!available) this.notify('이 브라우저는 진행 저장을 허용하지 않습니다.', 5000);
   }
   show(state: Session, sim?: Simulation, message = ''): void {
@@ -115,7 +115,7 @@ export class Interface {
       this.panel.querySelector('#restart')!.addEventListener('click', () => this.confirmNew(true));
       this.panel.querySelector('#exit')!.addEventListener('click', () => this.onExit());
     } else if (state === 'complete') {
-      this.panel.innerHTML = `<div class="dialog"><div class="eyebrow">A LITTLE HIGHER THAN BEFORE</div><h2>${sim?.course.mode === 'training' ? '준비됐어요.' : '혀끝까지 왔어요.'}</h2><p class="dialog-note">${sim?.course.mode === 'training' ? '이제 긴 정원에서 도전해 보세요.' : '작은 도약이 모여 여기까지.'}</p><div class="result"><strong>${Math.floor(sim?.course.height ?? 0)}<small>m</small></strong><span>${formatTime(sim?.time ?? 0)}<small>활성 플레이 시간</small></span></div><button class="primary full" id="again">${sim?.course.mode === 'training' ? '정원 오르기 ↗' : '한 번 더 오르기 ↗'}</button><button class="text-button full" id="exit">메뉴로</button></div>`;
+      this.panel.innerHTML = `<div class="dialog"><div class="eyebrow">A LITTLE HIGHER THAN BEFORE</div><h2>${sim?.course.mode === 'training' ? '준비됐어요.' : '정상에 도착했어요.'}</h2><p class="dialog-note">${sim?.course.mode === 'training' ? '이제 긴 정원에서 도전해 보세요.' : '작은 도약이 모여 여기까지.'}</p><div class="result"><strong>${Math.floor(sim?.course.height ?? 0)}<small>m</small></strong><span>${formatTime(sim?.time ?? 0)}<small>활성 플레이 시간</small></span></div><button class="primary full" id="again">${sim?.course.mode === 'training' ? '정원 오르기 ↗' : '한 번 더 오르기 ↗'}</button><button class="text-button full" id="exit">메뉴로</button></div>`;
       this.panel.querySelector('#again')!.addEventListener('click', () => this.onStart('main'));
       this.panel.querySelector('#exit')!.addEventListener('click', () => this.onExit());
     } else if (state === 'error') {

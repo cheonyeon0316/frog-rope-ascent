@@ -62,6 +62,17 @@ describe('actual Rapier rope physics', () => {
     const d = distance(camera, a), direction = vec((a.x - camera.x) / d, (a.y - camera.y) / d, (a.z - camera.z) / d);
     expect(s.selectTarget(camera, direction)?.id).toBe('a'); s.dispose();
   });
+  it('detects body contact with visible food without consuming or blocking tongue access', () => {
+    const course = fixture(); course.anchors[0].food = 'fly';
+    const s = new Simulation(course);
+    s.body.setTranslation(vec(0, 7, 0), true); s.body.setLinvel(vec(), true);
+    s.step(idle, null);
+    expect(s.flyLife('a').phase).toBe('alive');
+    expect(s.events.some(event => event.type === 'touch' && event.anchor === 'a' && event.reason === 'body-contact')).toBe(true);
+    s.body.setTranslation(vec(0, 3, 0), true); s.body.setLinvel(vec(), true);
+    expect(s.attach('a')).toBe(true);
+    s.dispose();
+  });
   it('produces matching results under 30, 60 and 120 FPS render schedules', () => {
     function run(fps: number) {
       const s = new Simulation(fixture()); s.attach('a'); let acc = 0;
@@ -147,7 +158,8 @@ describe('course and progress contracts', () => {
     let previous = main.course.start;
     for (let i = 1; i <= 36; i++) {
       main.body.setTranslation(previous, true);
-      expect(main.attach(`fly-${i}-a`), `safe route ${i}`).toBe(true); main.release();
+      const food = i === 1 ? 'fly-1-a' : main.course.route![i-2].launch;
+      expect(main.attach(food), `safe route ${i}`).toBe(true); main.release();
       const platform = i === 36 ? main.course.summit : main.course.platforms.find(p => p.id === `pad-${i}`)!;
       previous = vec(platform.position.x, platform.position.y + platform.size.y / 2 + .4, platform.position.z);
     }

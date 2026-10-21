@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-const output = new URL('../playtest/', import.meta.url); await mkdir(output, { recursive: true });
+const output = new URL(`../playtest/${process.env.PLAYTEST_OUTPUT ?? ''}`, import.meta.url); await mkdir(output, { recursive: true });
 const browser = await chromium.launch(launchOptions);
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
 const results = [], errors = [];
@@ -67,9 +67,9 @@ try {
   await page.goto(gameURL); await boot();
   await page.evaluate(async () => {
     const { makeCourse } = await import('/src/game/course.ts');
-    const c = makeCourse('main'), p = c.platforms.find(p => p.id === 'pad-2').position;
+    const c = makeCourse('main'), pad = c.platforms.find(p => p.id === 'pad-2'), p=pad.position;
     const a = c.anchors.find(a => a.id === 'food-crossing-pond');
-    const position = { x: p.x, y: p.y + .55, z: p.z };
+    const position = { x: p.x, y: p.y + pad.size.y/2 + .4, z: p.z };
     const state = { version: 1, course: c.id, mode: 'main', position, velocity: { x: 0, y: 0, z: 0 }, attached: a.id,
       length: Math.hypot(position.x - a.position.x, position.y - a.position.y, position.z - a.position.z), peak: p.y, time: 0, falls: 0, tick: 0, finished: false };
     await new Promise((resolve, reject) => {
@@ -90,9 +90,17 @@ try {
   await page.waitForFunction(() => document.querySelector('#ui').dataset.state === 'paused');
   const restored = await get(); assert.equal(restored.dash, 'launch'); assert.deepEqual(restored.v, paused.v);
   await page.locator('#resume').click();
+  await page.waitForFunction(() => !document.querySelector('#ui').dataset.dashKind,null,{timeout:3000});
+  const arrival=await page.evaluate(async()=>{
+    const {makeCourse}=await import('/src/game/course.ts');const c=makeCourse('main');
+    const beat=c.route.find(b=>b.platform==='pad-2');return c.anchors.find(a=>a.id===beat.arrival);
+  });
+  await aim(arrival.position);await page.mouse.down();await page.mouse.up();
+  await page.waitForFunction(id=>document.querySelector('#ui').dataset.attached===id,arrival.id,{timeout:2000});
+  await page.keyboard.press('Space');await waitDash();
   await page.waitForFunction(() => document.querySelector('#ui').dataset.refuge === 'basin-grass', null, { timeout: 5000 });
   await shot('crossing-landed');
-  results.push({ check: 'strong dash survives pause and reload, then crosses into grass with real Space input', paused, restored, landed: await get(), fixtureBased: true });
+  results.push({ check: 'strong dash survives pause and reload, then reconnects and crosses into grass with real input', paused, restored, landed: await get(), fixtureBased: true });
   assert.equal(errors.length, 0);
 } catch (e) { results.push({ failed: String(e) }); await shot('failure'); process.exitCode = 1; }
 await writeFile(new URL('launch-playtest.json', output), JSON.stringify({ results, errors }, null, 2));

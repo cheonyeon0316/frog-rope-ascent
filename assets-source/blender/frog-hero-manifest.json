@@ -1,0 +1,31 @@
+{
+  "pack": "frog-hero-first-pass",
+  "units": "metres",
+  "status": "first-pass-review",
+  "assets": [
+    {
+      "id": "frog_hero_lowpoly",
+      "name": "개구리 주인공",
+      "file": "public/assets/character/frog_hero_lowpoly.glb",
+      "purpose": "따뜻한 녹색 등과 크림색 목, 호박색 눈, 길게 뻗은 발과 둥근 발끝을 가진 낮은 폴리곤 개구리",
+      "rigBones": [
+        "Root",
+        "Torso",
+        "Head",
+        "ForeLeg.L",
+        "ForeLeg.R",
+        "HindLeg.L",
+        "HindLeg.R"
+      ],
+      "animations": [
+        "Frog_Idle",
+        "Frog_Jump",
+        "Frog_Dash"
+      ]
+    }
+  ],
+  "notes": [
+    "Rigid-part starter rig and three first-pass clips; refine timing and arcs against gameplay before shipping.",
+    "Model is a visual review asset and is not yet wired into the live renderer."
+  ]
+}

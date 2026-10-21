@@ -12,6 +12,7 @@
     "test:browser": "node tools/browser-playtest.mjs",
     "test:feeding": "node tools/browser-feeding-playtest.mjs",
     "test:camera": "node tools/browser-camera-playtest.mjs",
+    "test:camera-controls": "node tools/browser-camera-controls-playtest.mjs",
     "test:dash": "node tools/browser-dash-playtest.mjs",
     "test:gimmicks": "node tools/browser-gimmick-playtest.mjs",
     "test:transfer": "node tools/browser-transfer-playtest.mjs",

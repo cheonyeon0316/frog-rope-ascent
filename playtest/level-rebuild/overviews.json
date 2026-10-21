@@ -1,0 +1,38 @@
+{
+  "diagnosticCamera": true,
+  "zones": [
+    {
+      "id": "pond",
+      "name": "작은 연못"
+    },
+    {
+      "id": "grass",
+      "name": "거대한 풀숲"
+    },
+    {
+      "id": "rocks",
+      "name": "바위 골짜기"
+    },
+    {
+      "id": "flower",
+      "name": "거대한 꽃"
+    },
+    {
+      "id": "tree",
+      "name": "오래된 나무"
+    },
+    {
+      "id": "mountain",
+      "name": "바위산 능선"
+    },
+    {
+      "id": "clouds",
+      "name": "구름 바다"
+    },
+    {
+      "id": "stars",
+      "name": "별의 길"
+    }
+  ],
+  "errors": []
+}

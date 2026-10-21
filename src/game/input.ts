@@ -1,5 +1,9 @@
 import { clamp, type Controls } from './types';
 
+export function cameraRelativeAxes(side: number, forward: number, yaw: number) {
+  return { x: side * Math.cos(yaw) - forward * Math.sin(yaw), z: -side * Math.sin(yaw) - forward * Math.cos(yaw) };
+}
+
 export class Input {
   keys = new Set<string>();
   pointerX = 0;
@@ -103,7 +107,7 @@ export class Input {
     const side = Number(this.keys.has('KeyD') || this.keys.has('ArrowRight')) - Number(this.keys.has('KeyA') || this.keys.has('ArrowLeft')) + this.stick.x;
     const fwd = Number(this.keys.has('KeyW') || this.keys.has('ArrowUp')) - Number(this.keys.has('KeyS') || this.keys.has('ArrowDown')) + this.stick.z;
     const event = this.events.shift();
-    const result: Controls = { x: side * Math.cos(yaw) - fwd * Math.sin(yaw), z: -side * Math.sin(yaw) - fwd * Math.cos(yaw),
+    const result: Controls = { ...cameraRelativeAxes(side, fwd, yaw),
       jump: this.jump, grapplePress: event === 'press' && !(this.toggle && attached), grappleRelease: event === 'release' || event === 'press' && this.toggle && attached };
     result.swim = Number(this.keys.has('Space') || this.padJump) - Number(this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.padDive);
     this.jump = false;

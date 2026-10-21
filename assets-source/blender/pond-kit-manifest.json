@@ -1,0 +1,53 @@
+{
+  "pack": "eco-pond-first-pass",
+  "units": "metres",
+  "status": "first-pass-review",
+  "assets": [
+    {
+      "id": "mdl_env_pond_basin",
+      "name": "열린 물가 흙둑",
+      "file": "public/assets/eco-pond/mdl_env_pond_basin.glb",
+      "purpose": "완전히 닫히지 않은 반달형 자연 둑, 얕은 물주머니와 흩어진 자갈",
+      "objectCount": 11
+    },
+    {
+      "id": "mdl_env_leaf_round",
+      "name": "넓은 연잎 발판",
+      "file": "public/assets/eco-pond/mdl_env_leaf_round.glb",
+      "purpose": "높은 중앙맥과 낮게 말린 가장자리가 있는 넓은 착지면",
+      "objectCount": 2
+    },
+    {
+      "id": "mdl_env_reed",
+      "name": "드문 갈대 군락",
+      "file": "public/assets/eco-pond/mdl_env_reed.glb",
+      "purpose": "높이가 다른 다섯 줄기와 절제된 잎으로 경로 여백을 남김",
+      "objectCount": 20
+    },
+    {
+      "id": "mdl_env_root_bridge",
+      "name": "드러난 뿌리 다리",
+      "file": "public/assets/eco-pond/mdl_env_root_bridge.glb",
+      "purpose": "세 겹의 비대칭 뿌리가 연못에서 풀숲으로 이어짐",
+      "objectCount": 3
+    },
+    {
+      "id": "mdl_env_stone_cluster",
+      "name": "물가 자갈 세 변형",
+      "file": "public/assets/eco-pond/mdl_env_stone_cluster.glb",
+      "purpose": "둥근·낮은·각진 세 실루엣으로 크기와 접촉감을 구분",
+      "objectCount": 3
+    },
+    {
+      "id": "mdl_env_lily_cluster",
+      "name": "어린 연잎 군락",
+      "file": "public/assets/eco-pond/mdl_env_lily_cluster.glb",
+      "purpose": "크기가 다른 두 잎과 새잎이 겹친 작은 수면 군집",
+      "objectCount": 5
+    }
+  ],
+  "notes": [
+    "Each GLB is a reusable independent asset.",
+    "Gameplay collision remains in course data until the visual surfaces are playtested."
+  ]
+}

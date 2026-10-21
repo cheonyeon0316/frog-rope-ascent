@@ -1,0 +1,67 @@
+{
+  "pack": "ecosystem-food-first-pass",
+  "units": "metres",
+  "status": "first-pass-review",
+  "assets": [
+    {
+      "id": "food_fruit_fly",
+      "name": "초파리",
+      "file": "public/assets/eco-food/food_fruit_fly.glb",
+      "purpose": "가장 작은 목표, 따뜻한 몸색과 짧은 반투명 날개",
+      "objectCount": 17
+    },
+    {
+      "id": "food_fly",
+      "name": "파리",
+      "file": "public/assets/eco-food/food_fly.glb",
+      "purpose": "표준 목표 파리, 굵은 몸통과 넓은 날개",
+      "objectCount": 15
+    },
+    {
+      "id": "food_beetle",
+      "name": "풍뎅이",
+      "file": "public/assets/eco-food/food_beetle.glb",
+      "purpose": "낮고 단단한 청록 딱지날개와 중앙 봉합선",
+      "objectCount": 17
+    },
+    {
+      "id": "food_pollen",
+      "name": "꽃가루",
+      "file": "public/assets/eco-food/food_pollen.glb",
+      "purpose": "서로 붙은 황금빛 꽃가루 입자와 작은 광점",
+      "objectCount": 10
+    },
+    {
+      "id": "food_bee",
+      "name": "벌",
+      "file": "public/assets/eco-food/food_bee.glb",
+      "purpose": "노란 몸과 검은 띠, 옅은 날개와 작은 다리",
+      "objectCount": 19
+    },
+    {
+      "id": "food_moth",
+      "name": "나방",
+      "file": "public/assets/eco-food/food_moth.glb",
+      "purpose": "큰 자주빛 날개와 따뜻한 눈무늬로 구분되는 목표",
+      "objectCount": 17
+    },
+    {
+      "id": "food_dew",
+      "name": "이슬",
+      "file": "public/assets/eco-food/food_dew.glb",
+      "purpose": "맑은 청록 물방울과 작은 잎 받침",
+      "objectCount": 4
+    },
+    {
+      "id": "food_stardust",
+      "name": "별가루",
+      "file": "public/assets/eco-food/food_stardust.glb",
+      "purpose": "짧은 거리에서도 별로 읽히는 입체 오각 발판형 토큰과 세 입자",
+      "objectCount": 5
+    }
+  ],
+  "notes": [
+    "All 8 in-game food types have separate GLB models.",
+    "Target anchors are present; game behavior and collision remain in course data."
+  ]
+}

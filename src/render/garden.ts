@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { type Course, type Anchor, type Platform, type WaterVolume, type Vec, clamp, COLORS } from '../game/types';
 import { FLY_TIMING, DASH_CONFIG, type Simulation } from '../game/simulation';
-import { landscapeMesh, starMesh, cloudClumps } from '../game/environment';
+import { landscapeMesh, starMesh, cloudClumps, platformMesh, bladeHeight } from '../game/environment';
 
 const V = (p: Vec) => new THREE.Vector3(p.x, p.y, p.z);
 const material = (color: THREE.ColorRepresentation, roughness = .85) => new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
@@ -124,6 +124,7 @@ export class Garden {
   private lastAnimationTime = 0;
   private cameraBank = 0;
   private cameraFov = 60;
+  private renderedYaw = .52;
   yaw = .52;
   pitch = .36;
   private distance = 8;
@@ -133,10 +134,14 @@ export class Garden {
   private missUntil = 0;
   private lastTongueEnd = new THREE.Vector3();
   private wallRay = new THREE.Raycaster();
+  private cameraRay = new THREE.Raycaster();
   private collisionMeshes: THREE.Object3D[] = [];
+  private cameraFades = new Map<THREE.Mesh, { original: THREE.Material | THREE.Material[]; faded: THREE.Material | THREE.Material[] }>();
   private ownedMaterials = new Set<THREE.Material>();
   private biomeColors: string[] = [];
   private skyColors: THREE.Color[] = [];
+  private skyZenithColors: THREE.Color[] = [];
+  private skyDomeMaterial!: THREE.ShaderMaterial;
   private stars: THREE.Points | null = null;
   private mats = {
     frog: material('#719b58', .72), belly: material('#ded8b0', .82), dark: material('#354235', .52), white: material('#fff9e7', .28),
@@ -146,18 +151,29 @@ export class Garden {
     dash: new THREE.MeshBasicMaterial({ color: '#fff6d7', transparent: true, opacity: .6, depthWrite: false }),
   };
 
+  get movementYaw() { return this.renderedYaw; }
+
   constructor(readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.16;
+    this.renderer.toneMappingExposure = 1.02;
     this.scene.background = new THREE.Color('#dce4d0');
     this.scene.fog = new THREE.FogExp2('#dce4d0', .008);
-    this.scene.add(new THREE.HemisphereLight('#fff2d7', '#546f51', 2.15));
-    const fill = new THREE.DirectionalLight('#c8e8f0', .8); fill.position.set(-18, 12, -20); this.scene.add(fill);
+    this.skyDomeMaterial = new THREE.ShaderMaterial({
+      uniforms: { horizon: { value: new THREE.Color('#dce8ce') }, zenith: { value: new THREE.Color('#a9cee5') } },
+      vertexShader: 'varying vec3 vDirection; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vDirection=normalize(worldPosition.xyz-cameraPosition); gl_Position=projectionMatrix*viewMatrix*worldPosition; }',
+      fragmentShader: 'uniform vec3 horizon; uniform vec3 zenith; varying vec3 vDirection; void main(){ float h=smoothstep(-0.28,0.72,vDirection.y); float haze=pow(1.0-abs(vDirection.y-0.08),5.0); vec3 color=mix(horizon,zenith,h); color=mix(color,vec3(1.0,0.83,0.66),haze*0.12); gl_FragColor=vec4(color,1.0); }',
+      side: THREE.BackSide, depthWrite: false, depthTest: false, toneMapped: false,
+    });
+    const skyDome = new THREE.Mesh(new THREE.SphereGeometry(260, 32, 20), this.skyDomeMaterial);
+    skyDome.name = 'ecosystem-sky-gradient'; skyDome.frustumCulled = false; skyDome.renderOrder = -1000; this.scene.add(skyDome);
+    this.scene.add(new THREE.HemisphereLight('#fff2d7', '#546f51', 1.45));
+    const fill = new THREE.DirectionalLight('#c8e8f0', .72); fill.position.set(-18, 12, -20); this.scene.add(fill);
     this.sun = new THREE.DirectionalLight('#ffe1ad', 3.2);
+    this.sun.intensity = 2.55;
     this.sun.position.set(20, 28, 16); this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1536, 1536);
     this.sun.shadow.camera.left = -20; this.sun.shadow.camera.right = 20;
@@ -415,8 +431,61 @@ export class Garden {
     this.flies.set(a.id, group);
   }
 
+  private clearCameraFades(): void {
+    for (const [mesh, state] of this.cameraFades) {
+      mesh.material = state.original;
+      if (Array.isArray(state.faded)) state.faded.forEach(material => material.dispose());
+      else state.faded.dispose();
+    }
+    this.cameraFades.clear();
+  }
+
+  private fadeCameraOccluders(): void {
+    const direction = this.focus.clone().sub(this.camera.position);
+    const distance = direction.length();
+    if (distance < .01) return;
+    direction.multiplyScalar(1 / distance);
+    this.cameraRay.set(this.camera.position, direction);
+    this.cameraRay.far = Math.max(0, distance - .35);
+    const occluders = new Set(this.cameraRay.intersectObjects(this.collisionMeshes, false)
+      .map(hit => hit.object).filter((object): object is THREE.Mesh => object instanceof THREE.Mesh));
+    for (const [mesh, state] of this.cameraFades) if (!occluders.has(mesh)) {
+      mesh.material = state.original;
+      if (Array.isArray(state.faded)) state.faded.forEach(material => material.dispose());
+      else state.faded.dispose();
+      this.cameraFades.delete(mesh);
+    }
+    for (const mesh of occluders) {
+      if (this.cameraFades.has(mesh)) continue;
+      const original = mesh.material;
+      const makeGhost = (material: THREE.Material) => {
+        const ghost = material.clone();
+        ghost.transparent = true;
+        ghost.opacity = .2;
+        ghost.depthWrite = false;
+        ghost.needsUpdate = true;
+        return ghost;
+      };
+      const faded = Array.isArray(original) ? original.map(makeGhost) : makeGhost(original);
+      this.cameraFades.set(mesh, { original, faded });
+      mesh.material = faded;
+    }
+  }
+
   private platform(p: Platform, naturalSupports = false): void {
     const root = new THREE.Group(); root.position.copy(V(p.position)); this.world.add(root);
+    if (p.rotation) root.rotation.set(p.rotation.x,p.rotation.y,p.rotation.z);
+    if (p.form) {
+      this.landform(p, root);
+      // Refuge landforms keep their existing collision surface. This separate skirt
+      // only gives the checkpoint a layered, natural underside in the render.
+      if (p.refuge && p.form !== 'branch' && p.form !== 'root') {
+        const cliffMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .96, flatShading: false, side: THREE.DoubleSide });
+        const cliff = this.mesh(this.islandCliffGeometry(p.size, p.zone), cliffMaterial, root);
+        cliff.position.y = -.045; cliff.scale.y = .92; cliff.castShadow = false;
+      }
+      return;
+    }
     if (p.kind === 'cloud' && !p.refuge) {
       for (const [i, clump] of cloudClumps(p.size).entries()) {
         const puff = this.mesh(new THREE.IcosahedronGeometry(1, 0), material(i ? '#dce8f5' : '#f4f7fc'), root, V(clump.position));
@@ -534,6 +603,52 @@ export class Garden {
     }
   }
 
+  private landform(p: Platform, root: THREE.Group): void {
+    const data = platformMesh(p), geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(data.vertices,3));
+    geometry.setIndex(new THREE.BufferAttribute(data.indices,1)); geometry.computeVertexNormals();
+    const palette: Record<string,string[]> = {leaf:['#648a3c','#a8ba64'],petal:['#bd6f92','#f3c6ba'],stone:['#7d857c','#c3c4a2'],branch:['#725036','#b08b56'],root:['#62563b','#9e925a'],cloud:['#bfd4e9','#fbfcff']};
+    const [dark,light] = palette[p.form!];
+    const base = new THREE.Color(p.color ?? dark), accent = new THREE.Color(p.color ?? light);
+    if(p.color) { base.multiplyScalar(.78); accent.lerp(new THREE.Color('#fff5d6'),.2); }
+    const colors: number[] = [];
+    for(let i=0;i<data.vertices.length;i+=3) {
+      const x=data.vertices[i],y=data.vertices[i+1],z=data.vertices[i+2];
+      const shade=clamp(.3+y/Math.max(.4,p.size.y)*.35+.13*Math.sin(x*1.7+z*.8),.1,.95);
+      const c=base.clone().lerp(accent,shade); colors.push(c.r,c.g,c.b);
+    }
+    geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+    const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.88,flatShading:true,side:THREE.DoubleSide,emissive:base.clone().multiplyScalar(.12)});
+    this.collisionMeshes.push(this.mesh(geometry,mat,root));
+    if(p.form==='leaf'||p.form==='petal') {
+      const vein=material(p.form==='petal'?'#f1c0c0':'#b4c47a');
+      const points:THREE.Vector3[]=[];
+      for(let i=0;i<=12;i++) { const z=(i/12-.5)*p.size.z*.94; points.push(new THREE.Vector3(0,bladeHeight(p,0,z)+.025,z)); }
+      this.mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points),20,.025,4,false),vein,root);
+      for(const side of [-1,1]) for(let j=0;j<4;j++) {
+        const z=(j/4-.35)*p.size.z*.7,x=side*p.size.x*.34;
+        const a=new THREE.Vector3(0,bladeHeight(p,0,z)+.03,z);
+        const b=new THREE.Vector3(x,bladeHeight(p,x,z+.6)+.03,z+.6);
+        this.mesh(new THREE.TubeGeometry(new THREE.LineCurve3(a,b),1,.012,3,false),vein,root);
+      }
+    }
+    if(p.form==='stone'&&p.zone<6) {
+      const moss=material(p.zone===5?'#adb9a7':'#8caa65');
+      for(let i=0;i<4;i++) {
+        const a=i*2.4+.3;
+        const tuft=this.mesh(new THREE.IcosahedronGeometry(1,0),moss,root,new THREE.Vector3(Math.cos(a)*p.size.x*.28,p.size.y/2+.03,Math.sin(a)*p.size.z*.28));
+        tuft.scale.set(.32,.055,.23);
+      }
+    }
+    if(p.form==='branch'||p.form==='root') {
+      const bark=material('#5f4834');
+      for(const side of [-1,1]) for(let i=0;i<3;i++) {
+        const line=this.mesh(new THREE.BoxGeometry(.022,.018,p.size.z*.65),bark,root,new THREE.Vector3(side*p.size.x*(.12+i*.06),p.size.y*.44,0));
+        line.rotation.y=side*.04;
+      }
+    }
+  }
+
   private islandCliffGeometry(size: Vec, zone: number): THREE.BufferGeometry {
     // Leave the top open: the matching collision landscape above supplies its uneven surface.
     // A tapered, stratified underside reads as a natural floating bank instead of a cut cylinder.
@@ -629,6 +744,8 @@ export class Garden {
   }
 
   load(course: Course): void {
+    this.canvas.dataset.course=course.id;
+    this.clearCameraFades();
     this.world.traverse(o => {
       if ((o instanceof THREE.Mesh || o instanceof THREE.Points) && !this.grassShapes.includes(o.geometry)) o.geometry.dispose();
     });
@@ -637,6 +754,10 @@ export class Garden {
     this.flies.clear(); this.collisionMeshes.length = 0; this.waterSurfaces.length = 0;
     this.biomeColors = course.biomes?.map(b => b.color) ?? [];
     this.skyColors = course.biomes?.map(b => new THREE.Color(b.sky)) ?? [];
+    this.skyZenithColors = course.biomes?.map(b => {
+      const color = new THREE.Color(b.sky);
+      return b.id === 'stars' ? color.clone().multiplyScalar(.65) : color.clone().lerp(new THREE.Color('#92b8d5'), .28);
+    }) ?? [];
     this.stars = null;
     if (course.biomes) {
       const points: number[] = [];
@@ -646,7 +767,7 @@ export class Garden {
       this.ownedMaterials.add(mat);
       this.stars = new THREE.Points(geometry, mat); this.world.add(this.stars);
     }
-    for (const p of course.platforms) this.platform(p, course.id === 'ecosystem-main-v2');
+    for (const p of course.platforms) this.platform(p, !!course.biomes);
     const terrainAccents = ['#9aac66', '#abc276', '#b2a78e', '#b77986', '#aa9b68', '#778794', '#f7f8fc', '#85754c'];
     for (const land of course.landscapes ?? []) {
       const data = landscapeMesh(land), geometry = new THREE.BufferGeometry();
@@ -662,7 +783,7 @@ export class Garden {
       }
       geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
       geometry.computeVertexNormals();
-      const surfaceMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      const surfaceMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .98, side: THREE.DoubleSide });
       this.ownedMaterials.add(surfaceMaterial);
       const surface = this.mesh(geometry, surfaceMaterial, this.world, V(land.position));
       surface.receiveShadow = false;
@@ -714,7 +835,7 @@ export class Garden {
         leaf.scale.set(2.5, .28, 1.7); leaf.rotation.set(.18, angle, -.18);
       }
     }
-    this.sceneReady = false; this.yaw = .52; this.pitch = course.mode === 'main' ? .18 : .36; this.distance = 8;
+    this.sceneReady = false; this.yaw = .52; this.renderedYaw = .52; this.pitch = course.mode === 'main' ? .18 : .36; this.distance = course.route ? 12 : 8;
     this.landing = -1; this.missUntil = 0;
     this.hopPhase = 0; this.lastAnimationTime = 0;
   }
@@ -745,6 +866,11 @@ export class Garden {
     if (sky) {
       if (!this.sceneReady) (this.scene.background as THREE.Color).copy(sky);
       else (this.scene.background as THREE.Color).lerp(sky, 1 - Math.exp(-dt * 1.5));
+      const zenith = this.skyZenithColors[sim.zone] ?? sky;
+      const horizon = sim.zone === 7 ? sky.clone().lerp(new THREE.Color('#625273'), .48) : sky.clone().lerp(new THREE.Color('#f5e5c7'), .3);
+      const blend = this.sceneReady ? 1 - Math.exp(-dt * 1.25) : 1;
+      this.skyDomeMaterial.uniforms.horizon.value.lerp(horizon, blend);
+      this.skyDomeMaterial.uniforms.zenith.value.lerp(zenith, blend);
       (this.scene.fog as THREE.FogExp2).color.copy(this.scene.background as THREE.Color);
       (this.scene.fog as THREE.FogExp2).density = sim.zone >= 6 ? .003 : .008;
     } else {
@@ -917,7 +1043,8 @@ export class Garden {
     if (target) { this.targetRing.position.copy(V(target.position)); this.targetRing.quaternion.copy(this.camera.quaternion); }
     this.attachedRing.visible = !!sim.anchor;
     if (sim.anchor) { this.attachedRing.position.copy(V(sim.anchor.position)); this.attachedRing.quaternion.copy(this.camera.quaternion); }
-    const goalFocus = p.clone().add(new THREE.Vector3(0, 1.2, 0));
+    const authored = !!sim.course.route;
+    const goalFocus = p.clone().add(new THREE.Vector3(0, authored ? 2.7 : 1.2, 0));
     if (sim.anchor) goalFocus.lerp(V(sim.anchor.position), .18);
     // Let the view anticipate the frog's arc, so a fast launch feels like forward travel
     // instead of the character sliding across a camera that is still catching up.
@@ -928,18 +1055,32 @@ export class Garden {
     goalFocus.add(cameraLead);
     if (!this.sceneReady) { this.focus.copy(goalFocus); this.sceneReady = true; }
     else this.focus.lerp(goalFocus, 1 - Math.exp(-dt * (8 + Math.min(10, speed * .3) + (dashState ? 5 : 0))));
-    const wanted = (sim.anchor ? clamp(sim.ropeLength * .8 + 4, 7, 12) : 8)
+    const wanted = (sim.anchor ? clamp(sim.ropeLength * .8 + (authored ? 7 : 4), authored ? 11 : 7, authored ? 15 : 12) : authored ? 12 : 8)
       + Math.min(1.1, speed * .045) + (strong ? .7 : 0);
     this.distance = THREE.MathUtils.lerp(this.distance, wanted, 1 - Math.exp(-dt * (4 + (dashState ? 4 : 0))));
     const drift = motion && !sim.attached ? Math.sin(now * .42) * .026 : 0;
+    // Keep biome transitions from rotating the view underneath camera-relative WASD.
     const yaw = this.yaw + drift;
+    this.renderedYaw = yaw;
     const pitch = this.pitch + (motion && !sim.attached ? Math.sin(now * .31 + 1.4) * .009 : 0);
     const offset = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(this.distance);
     const direction = offset.clone().normalize();
-    this.wallRay.set(this.focus, direction); this.wallRay.far = this.distance;
-    const hits = this.wallRay.intersectObjects(this.collisionMeshes, false);
-    if (hits.length && hits[0].distance < offset.length()) offset.setLength(Math.max(1.2, hits[0].distance - .2));
+    const cameraRight = new THREE.Vector3().crossVectors(direction, new THREE.Vector3(0, 1, 0)).normalize();
+    const cameraVertical = new THREE.Vector3().crossVectors(cameraRight, direction).normalize();
+    const shoulder = .38;
+    const probes = [
+      new THREE.Vector3(), cameraRight.clone().multiplyScalar(shoulder), cameraRight.clone().multiplyScalar(-shoulder),
+      cameraVertical.clone().multiplyScalar(shoulder), cameraVertical.clone().multiplyScalar(-shoulder),
+    ];
+    let nearestBlocker = offset.length();
+    for (const probe of probes) {
+      this.wallRay.set(this.focus.clone().add(probe), direction); this.wallRay.far = offset.length();
+      const hit = this.wallRay.intersectObjects(this.collisionMeshes, false)[0];
+      if (hit) nearestBlocker = Math.min(nearestBlocker, hit.distance);
+    }
+    if (nearestBlocker < offset.length()) offset.setLength(Math.max(.35, nearestBlocker - .5));
     this.camera.position.copy(this.focus).add(offset); this.camera.lookAt(this.focus);
+    this.fadeCameraOccluders();
     const speedFactor = clamp((speed - 3) / 22, 0, 1);
     const wantedFov = 60 + speedFactor * (strong ? 10 : 5.5) + (sim.attached && horizontalSpeed > 5 ? 1.5 : 0);
     this.cameraFov = THREE.MathUtils.lerp(this.cameraFov, wantedFov, 1 - Math.exp(-dt * (strong ? 8 : 3.5)));
@@ -951,7 +1092,7 @@ export class Garden {
     const wantedBank = motion ? clamp(-lateralSpeed * .0028, -.075, .075) * (dashState ? 1.25 : 1) : 0;
     this.cameraBank = THREE.MathUtils.lerp(this.cameraBank, wantedBank, 1 - Math.exp(-dt * 4.5));
     this.camera.rotateZ(this.cameraBank);
-    this.canvas.dataset.cameraYaw = this.yaw.toFixed(4);
+    this.canvas.dataset.cameraYaw = yaw.toFixed(4);
     this.canvas.dataset.cameraPitch = this.pitch.toFixed(4);
     this.canvas.dataset.cameraX = this.camera.position.x.toFixed(4);
     this.canvas.dataset.cameraY = this.camera.position.y.toFixed(4);

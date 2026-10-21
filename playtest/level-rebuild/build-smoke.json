@@ -1,0 +1,20 @@
+{
+  "results": [
+    {
+      "name": "production",
+      "url": "http://127.0.0.1:5280/",
+      "course": "ecosystem-main-v3",
+      "jump": true,
+      "saveRestore": true,
+      "errors": []
+    },
+    {
+      "name": "standalone",
+      "url": "file:///C:/Codex/frog-ascent-windows-20261013/frog-ascent-windows-20261013/workspace/Last/browser/frog-rope-ascent/frog-ascent.html",
+      "course": "ecosystem-main-v3",
+      "jump": true,
+      "saveRestore": true,
+      "errors": []
+    }
+  ]
+}

@@ -12,6 +12,7 @@ export class Audio {
     void this.context.resume();
   }
   play(e: GameEvent): void {
+    if (e.type === 'touch') return;
     if (!this.context || !this.master || this.mute) return;
     const map = { shoot: [530, 180, .07], catch: [820, 380, .1], recovery: [620, 960, .2], release: [410, 110, .1], eat: [330, 120, .22], dash: [680, 210, .12], miss: [180, 110, .06],
       blocked: [140, 90, .12], land: [120, 55, .12], fall: [240, 170, .13], reset: [120, 180, .2], summit: [440, 880, .5],

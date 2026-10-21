@@ -2,7 +2,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { beforeAll, expect, it } from 'vitest';
 import { makeCourse } from '../src/game/course';
 import { Simulation, DASH_CONFIG, validSave } from '../src/game/simulation';
-import { vec, distance, length, type Controls } from '../src/game/types';
+import { vec, distance, length, clamp, type Controls } from '../src/game/types';
 
 beforeAll(async () => { await RAPIER.init(); });
 const idle: Controls = { x: 0, z: 0, jump: false, grapplePress: false, grappleRelease: false };
@@ -29,8 +29,8 @@ it('eats and launches toward the attached target on Space even during a fast fal
   s.step({ ...idle, jump: true }, null);
   expect(s.attached).toBeNull(); expect(s.flyLife('fly-0').phase).toBe('retracting');
   expect(s.dash?.kind).toBe('launch');
-  expect(s.velocity.x * n.x + s.velocity.y * n.y + s.velocity.z * n.z).toBeGreaterThan(7.4);
-  expect(s.velocity.x * n.x + s.velocity.y * n.y + s.velocity.z * n.z).toBeLessThan(12);
+  expect(length(s.velocity)).toBeGreaterThan(8.5);
+  expect(length(s.velocity)).toBeLessThan(DASH_CONFIG.launchMaxSpeed);
   const launch = s.dash!;
   expect(launch.distance).toBeCloseTo(d, 5);
   expect(launch.duration).toBeCloseTo(launch.distance! / (DASH_CONFIG.launchCruiseSpeed * .9), 5);
@@ -40,12 +40,10 @@ it('eats and launches toward the attached target on Space even during a fast fal
   const progress = (s.position.x - origin.x) * n.x + (s.position.y - origin.y) * n.y + (s.position.z - origin.z) * n.z;
   expect(progress).toBeGreaterThan(d - .25);
   expect(progress).toBeLessThan(d + .1);
-  const arrivalSpeed = s.velocity.x * n.x + s.velocity.y * n.y + s.velocity.z * n.z;
-  expect(arrivalSpeed).toBeGreaterThan(DASH_CONFIG.launchArrivalSpeed - .5);
-  expect(arrivalSpeed).toBeLessThan(DASH_CONFIG.launchCruiseSpeed * .7);
+  const arrivalVelocity = s.velocity;
+  expect(arrivalVelocity.y).toBeGreaterThan(0);
   s.step(idle, null);
-  const coastSpeed = s.velocity.x * n.x + s.velocity.y * n.y + s.velocity.z * n.z;
-  expect(coastSpeed).toBeGreaterThan(arrivalSpeed - .3);
+  expect(s.velocity.y).toBeLessThan(arrivalVelocity.y - .1);
   expect(s.events.filter(e => e.type === 'eat')).toHaveLength(1);
   const before = s.velocity; s.step({ ...idle, grappleRelease: true }, null);
   expect(s.events.filter(e => e.type === 'eat')).toHaveLength(1);
@@ -77,29 +75,52 @@ it('restores a strong dash without repeating its launch and accepts old weak das
   s.dispose(); b.dispose();
 });
 
-it('uses each new crossing meal to reach the next ecosystem with an actual Space launch', () => {
+it('chains crossing and arrival meals to land in each next ecosystem', () => {
   const course = makeCourse('main');
   for (let zone = 0; zone < course.biomes!.length - 1; zone++) {
     const s = new Simulation(makeCourse('main'));
     const biome = s.course.biomes![zone], next = s.course.biomes![zone + 1];
     const pad = s.course.platforms.find(p => p.id === `pad-${biome.end / 5 - 1}`)!;
-    s.body.setTranslation(vec(pad.position.x, pad.position.y + .55, pad.position.z), true);
+    s.body.setTranslation(vec(pad.position.x, pad.position.y + pad.size.y / 2 + .4, pad.position.z), true);
     s.body.setLinvel(vec(), true);
     const crossing = s.anchorPosition(`food-crossing-${biome.id}`)!;
     expect(s.attach(`food-crossing-${biome.id}`), `${biome.id} entry d=${distance(s.position, crossing)} blocked=${s.blocked(s.position, crossing)}`).toBe(true);
     s.step({ ...idle, jump: true }, null);
+    for(let t=0;t<230&&s.dash;t++)s.step(idle,null);
+    const beat=course.route!.find(r=>r.platform===pad.id)!;
+    expect(s.attach(beat.arrival!),`reconnect ${biome.id}`).toBe(true);
+    s.step({...idle,jump:true},null);
+    for(let t=0;t<230&&s.dash;t++)s.step(idle,null);
+    const destination=course.platforms.find(p=>p.id===course.route![course.route!.indexOf(beat)+1].platform)!;
     let entered = false; const trace: unknown[] = [{ tick: 0, p: s.position, v: s.velocity }];
     for (let t = 0; t < 360; t++) {
-      s.step(idle, null);
+      const p=s.position,v=s.velocity;
+      s.step({...idle,x:clamp((destination.position.x-p.x)*.6-v.x*.45,-1,1),z:clamp((destination.position.z-p.z)*.6-v.z*.45,-1,1)}, null);
       if (t % 30 === 0) trace.push({ tick: t, p: s.position, v: s.velocity });
       entered ||= s.position.y >= next.start + .4 && Math.abs(s.position.x - next.center.x) < 9.5 && Math.abs(s.position.z - next.center.z) < 9.5;
     }
     if (!entered) console.log(JSON.stringify({ biome: biome.id, next: next.id, start: s.course.start, crossing, nextCenter: next.center, trace }));
-    if (zone === 0) expect(s.refuge?.id ?? { p: s.position, grounded: s.grounded, biome: s.biome?.id, falls: s.falls }).toBe('basin-grass');
+    expect(s.grounded, `landing ${biome.id}`).toBe(true);
     expect(entered, `${biome.id} -> ${next.id}: ${JSON.stringify(s.position)}`).toBe(true);
     expect(s.events.some(e => e.type === 'reset')).toBe(false);
     s.dispose();
   }
+});
+
+it('reaches a horizontal meal without sinking under it, then resumes gravity after arrival',()=>{
+  const s=new Simulation({id:'horizontal-dash',mode:'training',height:12,start:vec(0,10,0),
+    platforms:[],anchors:[{id:'side',position:vec(6,10,0),zone:0,recovery:false}],
+    summit:{id:'summit',position:vec(0,20,0),size:vec(3,.4,3),zone:0,kind:'star'}});
+  expect(s.attach('side')).toBe(true);s.release('launch');
+  const startY=s.position.y;let peakY=startY;
+  for(let t=0;t<230&&s.dash;t++){s.step(idle,null);peakY=Math.max(peakY,s.position.y);}
+  expect(distance(s.position,vec(6,10,0))).toBeLessThan(.2);
+  expect(peakY).toBeGreaterThan(startY+.5);
+  expect(s.velocity.x).toBeGreaterThan(2);
+  expect(s.velocity.y).toBeLessThan(0);
+  const before=s.velocity.y;s.step(idle,null);
+  expect(s.velocity.y).toBeLessThan(before-.1);
+  s.dispose();
 });
 
 it('keeps upper launch meals out of solid terrain throughout their motion', () => {
@@ -109,7 +130,7 @@ it('keeps upper launch meals out of solid terrain throughout their motion', () =
     if (t % 12) continue;
     for (const a of s.course.anchors.filter(a => a.id.endsWith('-b') || a.transition)) {
       const hit = s.world.intersectionWithShape(s.anchorPosition(a.id)!, { x: 0, y: 0, z: 0, w: 1 }, probe,
-        undefined, undefined, s.collider, s.body);
+        RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, s.collider, s.body);
       expect(hit === null, `${a.id} at ${s.time.toFixed(2)}s`).toBe(true);
     }
   }

@@ -74,7 +74,7 @@ async function boot(): Promise<void> {
       if (mode === 'main' && !saved) await store.save(sim.snapshot());
       state = saved ? 'paused' : 'playing'; awaitingGrip = false;
       input.active = state === 'playing'; audio.unlock(); ui.show(state, sim);
-      if (!saved) ui.notify(mode === 'training' ? 'Space 점프 → 먹이 잡기 → 매달린 채 Space로 먹고 강하게 대쉬!' : '매달린 채 Space로 먹고 발사! 두 겹의 금빛 원이 있는 먹이로 다음 생태계를 건너가세요.', 5200);
+      if (!saved) ui.notify(mode === 'training' ? 'Space 점프 → 먹이 잡기 → 매달린 채 Space로 먹고 강하게 대쉬!' : '먹이를 먹고 높이를 확보한 뒤, 다음 지형 위 먹이에 다시 연결하세요. 매달린 채 Space로 대시합니다.', 5200);
     } catch (e) {
       state = 'error'; ui.show(state, sim, e instanceof Error ? e.message : '시작하지 못했습니다.');
     } finally { starting = false; }
@@ -143,7 +143,11 @@ async function boot(): Promise<void> {
       accumulator += dt;
       let steps = 0;
       while (accumulator >= DT && steps++ < 12) {
-        sim.step(input.read(garden.yaw, !!sim.attached), target?.id ?? null);
+        const movementYaw = garden.movementYaw;
+        const controls = input.read(movementYaw, !!sim.attached);
+        canvas.dataset.movementYaw = movementYaw.toFixed(4);
+        canvas.dataset.inputX = controls.x.toFixed(4); canvas.dataset.inputZ = controls.z.toFixed(4);
+        sim.step(controls, target?.id ?? null);
         accumulator -= DT;
       }
       if (accumulator >= DT) accumulator = 0;
