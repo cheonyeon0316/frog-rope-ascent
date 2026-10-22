@@ -36,8 +36,8 @@ export class Interface {
         <button id="pause-button" class="round-button" title="일시정지 (Esc)" aria-label="일시정지">Ⅱ</button>
         <div id="reticle" class="reticle" aria-hidden="true"><i></i></div>
         <div id="toast" class="toast" role="status" hidden></div>
-        <div class="play-hint"><span class="control-dot"></span><span id="hint">마우스로 파리 조준 · 꾹 눌러 연결 · 놓으면 도약</span></div>
-        <div class="look-hint">WASD 이동·스윙 <span>·</span> Space 점프 <span>·</span> 우클릭 드래그 시점</div>
+        <div class="play-hint"><span class="control-dot"></span><span id="hint">마우스 이동으로 중앙 조준 · 꾹 눌러 연결</span></div>
+        <div class="look-hint">WASD 이동·스윙 <span>·</span> Space 점프 <span>·</span> 마우스 이동 시점·중앙 조준</div>
       </div>
       <section id="panel" class="overlay" aria-label="게임 메뉴">
         <div class="title-panel">
@@ -156,21 +156,23 @@ export class Interface {
   syncSettings(settings: Settings): void { this.activeSettings = { ...settings }; }
   notify(text: string, duration = 1800): void { this.toast.textContent = text; this.toast.hidden = false; this.toastUntil = performance.now() + duration; }
 
-  update(sim: Simulation, target: Anchor | null, pointer: { x: number; y: number }, grip: boolean, device: string): void {
+  update(sim: Simulation, target: Anchor | null, grip: boolean, device: string): void {
     this.currentSim = sim;
     this.height.textContent = String(Math.floor(sim.height)); this.peak.textContent = `${Math.floor(sim.peak)} m`;
     const water = sim.water;
     const refuge = sim.refuge;
     this.zone.textContent = water ? '이슬 속 · 수영 중' : refuge ? `${refuge.refuge} · 안쪽 지형` : sim.course.mode === 'training' ? '첫 도약 연습 · 12m' : sim.biome?.name ?? ZONES[sim.zone];
     this.timer.textContent = formatTime(sim.time);
-    this.reticle.style.left = `${(pointer.x + 1) / 2 * 100}%`; this.reticle.style.top = `${(1 - pointer.y) / 2 * 100}%`;
     this.reticle.className = `reticle ${target ? 'valid' : ''} ${sim.attached ? 'attached' : ''}`;
     const button = device === 'pad' ? 'RT' : '왼쪽 버튼';
     const swingButton = device === 'pad' ? 'A' : 'Space';
-    const lookHint = device === 'pad' ? '오른쪽 스틱으로 시점' : '우클릭 드래그로 시점';
-    this.hint.textContent = grip ? `${button}을 다시 꾹 눌러 매달린 상태로 재개` : sim.attached ? `WASD 스윙 · ${swingButton} 먹기 대쉬 · ${lookHint}` : target ? `${target.transition ? '다음 생태계 · ' : ''}${FOOD_NAMES[target.food ?? 'fly']} · ${button}으로 혀 걸기` : sim.grounded ? 'Space로 점프 · 마우스로 먹이 조준 · 꾹 눌러 연결' : '마우스로 다음 먹이 조준 · 꾹 눌러 연결';
+    const aimHint = device === 'pad' ? '오른쪽 스틱으로 중앙 조준' : '마우스 이동으로 중앙 조준';
+    const lookHint = device === 'pad' ? '오른쪽 스틱 시점' : '마우스 이동 시점';
+    this.hint.textContent = grip ? `${button}을 다시 꾹 눌러 매달린 상태로 재개` : sim.attached ? `WASD 스윙 · ${swingButton} 먹기 대쉬 · ${lookHint}` : target ? `${target.transition ? '다음 생태계 · ' : ''}${FOOD_NAMES[target.food ?? 'fly']} · ${button}으로 혀 걸기` : sim.grounded ? `Space로 점프 · ${aimHint} · 꾹 눌러 연결` : `${aimHint} · 먹이에 꾹 눌러 연결`;
     if (water && !grip && !sim.attached) this.hint.textContent = device === 'pad' ? 'A 꾹 수영↑ · B 수영↓ · 왼쪽 스틱 헤엄 · RT 먹이 연결' : 'Space 꾹 수영↑ · Shift 수영↓ · WASD 헤엄 · 먹이에 재연결';
-    this.lookHint.textContent = water ? '물방울 밖의 파리를 관찰하고, 수면 위에서 다시 스윙하세요.' : 'WASD 이동·스윙 · Space 점프 · 우클릭 드래그 시점';
+    this.lookHint.textContent = water ? '물방울 밖의 파리를 관찰하고, 수면 위에서 다시 스윙하세요.'
+      : device === 'pad' ? '왼쪽 스틱 이동·스윙 · 오른쪽 스틱 시점·중앙 조준 · A 점프'
+        : 'WASD 이동·스윙 · Space 점프 · 마우스 이동 시점·중앙 조준';
     if (performance.now() > this.toastUntil) this.toast.hidden = true;
     this.root.dataset.state = this.state;
     this.root.dataset.height = String(sim.height.toFixed(2)); this.root.dataset.attached = sim.attached ?? '';
