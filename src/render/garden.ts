@@ -160,11 +160,9 @@ export class Garden {
   private missUntil = 0;
   private lastTongueEnd = new THREE.Vector3();
   private wallRay = new THREE.Raycaster();
-  private cameraRay = new THREE.Raycaster();
   private collisionMeshes: THREE.Object3D[] = [];
   private platformRoots = new Map<string, THREE.Group>();
   private pondDecoration: THREE.Object3D[] = [];
-  private cameraFades = new Map<THREE.Mesh, { original: THREE.Material | THREE.Material[]; faded: THREE.Material | THREE.Material[] }>();
   private frogGhostMaterials = new Map<THREE.Mesh, { original: THREE.Material | THREE.Material[]; ghost: THREE.Material | THREE.Material[]; renderOrder: number }>();
   private frogOccluded = false;
   private ownedMaterials = new Set<THREE.Material>();
@@ -564,15 +562,6 @@ export class Garden {
     this.flies.set(a.id, group);
   }
 
-  private clearCameraFades(): void {
-    for (const [mesh, state] of this.cameraFades) {
-      mesh.material = state.original;
-      if (Array.isArray(state.faded)) state.faded.forEach(material => material.dispose());
-      else state.faded.dispose();
-    }
-    this.cameraFades.clear();
-  }
-
   private prepareFrogGhostMaterials(): void {
     const makeGhost = (material: THREE.Material) => {
       const ghost = material.clone();
@@ -611,38 +600,6 @@ export class Garden {
     this.wallRay.set(this.camera.position, direction.multiplyScalar(1 / distance));
     this.wallRay.far = Math.max(0, distance - .2);
     this.setFrogOccluded(this.wallRay.intersectObjects(this.collisionMeshes, false).length > 0);
-  }
-
-  private fadeCameraOccluders(): void {
-    const direction = this.focus.clone().sub(this.camera.position);
-    const distance = direction.length();
-    if (distance < .01) return;
-    direction.multiplyScalar(1 / distance);
-    this.cameraRay.set(this.camera.position, direction);
-    this.cameraRay.far = Math.max(0, distance - .35);
-    const occluders = new Set(this.cameraRay.intersectObjects(this.collisionMeshes, false)
-      .map(hit => hit.object).filter((object): object is THREE.Mesh => object instanceof THREE.Mesh));
-    for (const [mesh, state] of this.cameraFades) if (!occluders.has(mesh)) {
-      mesh.material = state.original;
-      if (Array.isArray(state.faded)) state.faded.forEach(material => material.dispose());
-      else state.faded.dispose();
-      this.cameraFades.delete(mesh);
-    }
-    for (const mesh of occluders) {
-      if (this.cameraFades.has(mesh)) continue;
-      const original = mesh.material;
-      const makeGhost = (material: THREE.Material) => {
-        const ghost = material.clone();
-        ghost.transparent = true;
-        ghost.opacity = .2;
-        ghost.depthWrite = false;
-        ghost.needsUpdate = true;
-        return ghost;
-      };
-      const faded = Array.isArray(original) ? original.map(makeGhost) : makeGhost(original);
-      this.cameraFades.set(mesh, { original, faded });
-      mesh.material = faded;
-    }
   }
 
   private platform(p: Platform, naturalSupports = false): void {
@@ -1211,7 +1168,6 @@ export class Garden {
     this.camera.updateProjectionMatrix();
     this.canvas.dataset.assetState = 'loading';
     this.canvas.dataset.course=course.id;
-    this.clearCameraFades();
     this.world.traverse(o => {
       if ((o instanceof THREE.Mesh || o instanceof THREE.Points) && !this.grassShapes.includes(o.geometry) && !o.userData.sharedAsset) o.geometry.dispose();
     });
@@ -1562,26 +1518,14 @@ export class Garden {
     const authored = !!sim.course.route;
     const goalFocus = p.clone().add(new THREE.Vector3(0, authored ? 1.9 : 1.05, 0));
     if (sim.anchor) goalFocus.lerp(V(sim.anchor.position), .1);
-    // Keep the player near screen center during a swing. A small lead preserves
-    // direction cues without letting fast input drag the framing across the view.
+    // Retain the normal camera lead and follow response from before center-aim controls.
     const cameraLead = v.clone().multiplyScalar(sim.anchor ? .022 : .038);
     cameraLead.x = clamp(cameraLead.x, -.42, .42);
     cameraLead.z = clamp(cameraLead.z, -.42, .42);
     cameraLead.y = clamp(cameraLead.y, -.32, .62);
     goalFocus.add(cameraLead);
     if (!this.sceneReady) { this.focus.copy(goalFocus); this.sceneReady = true; }
-    else {
-      const horizontalFollow = 1 - Math.exp(-dt * (sim.anchor ? 5.2 : 5.8));
-      const verticalGap = goalFocus.y - this.focus.y;
-      const verticalDeadZone = sim.anchor ? .42 : .32;
-      const verticalTarget = Math.abs(verticalGap) > verticalDeadZone
-        ? goalFocus.y - Math.sign(verticalGap) * verticalDeadZone
-        : this.focus.y;
-      const verticalFollow = 1 - Math.exp(-dt * (sim.anchor ? 7 : 8.5));
-      this.focus.x += (goalFocus.x - this.focus.x) * horizontalFollow;
-      this.focus.y += (verticalTarget - this.focus.y) * verticalFollow;
-      this.focus.z += (goalFocus.z - this.focus.z) * horizontalFollow;
-    }
+    else this.focus.lerp(goalFocus, 1 - Math.exp(-dt * (8 + Math.min(10, speed * .3))));
     const wanted = (sim.anchor ? clamp(sim.ropeLength * .62 + (authored ? 5.2 : 3.4), authored ? 9.5 : 7.5, authored ? 12.5 : 10.5) : authored ? 10.5 : 8)
       + Math.min(.45, speed * .018);
     this.distance = THREE.MathUtils.lerp(this.distance, wanted, 1 - Math.exp(-dt * 2.8));
@@ -1593,7 +1537,6 @@ export class Garden {
     const offset = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(this.distance);
     this.camera.position.copy(this.focus).add(offset);
     this.camera.lookAt(this.focus);
-    this.fadeCameraOccluders();
     this.updateFrogOcclusion();
     const speedFactor = clamp((speed - 3) / 22, 0, 1);
     const wantedFov = 60 + speedFactor * 3.5 + (sim.attached && horizontalSpeed > 5 ? .6 : 0);
