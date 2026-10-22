@@ -136,7 +136,7 @@ async function boot(): Promise<void> {
       garden.yaw -= input.lookX; garden.pitch = clamp(garden.pitch + input.lookY, -.95, 1.35);
     }
     input.lookX = 0; input.lookY = 0;
-    const aim = garden.aim(input.pointerX, input.pointerY);
+    const aim = garden.aim(0, 0);
     target = sim.selectTarget(aim.camera, aim.direction, store.settings.assisted);
     if (awaitingGrip && input.held) awaitingGrip = false;
     if (state === 'playing' && !awaitingGrip) {
@@ -183,7 +183,7 @@ async function boot(): Promise<void> {
     } else accumulator = 0;
     if (target && sim.flyLife(target.id).phase !== 'alive') target = null;
     garden.update(sim, target, dt, sim.time, store.settings.motion);
-    ui.update(sim, target, { x: input.pointerX, y: input.pointerY }, awaitingGrip, input.device);
+    ui.update(sim, target, awaitingGrip, input.device);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
