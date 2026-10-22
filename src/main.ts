@@ -10,8 +10,6 @@ import { Audio } from './render/audio';
 import { Interface } from './ui/interface';
 import { clamp, FOOD_NAMES, type Mode, type Session, type SaveState, type Anchor } from './game/types';
 
-const AIM_NDC_Y = .04;
-
 async function boot(): Promise<void> {
   await RAPIER.init();
   const canvas = document.querySelector<HTMLCanvasElement>('#world')!;
@@ -135,10 +133,10 @@ async function boot(): Promise<void> {
     const dt = Math.min(.1, Math.max(0, (now - lastFrame) / 1000)); lastFrame = now;
     input.pollPad(dt);
     if (state === 'playing') {
-      garden.yaw -= input.lookX; garden.pitch = clamp(garden.pitch + input.lookY, -1.18, 1.42);
+      garden.yaw -= input.lookX; garden.pitch = clamp(garden.pitch + input.lookY, -.95, 1.35);
     }
     input.lookX = 0; input.lookY = 0;
-    const aim = garden.aim(0, AIM_NDC_Y);
+    const aim = garden.aim(0, 0);
     target = sim.selectTarget(aim.camera, aim.direction, store.settings.assisted);
     if (awaitingGrip && input.held) awaitingGrip = false;
     if (state === 'playing' && !awaitingGrip) {
@@ -198,4 +196,3 @@ void boot().catch(e => {
   boot.querySelector('#reload')!.addEventListener('click', () => location.reload());
   console.error(e);
 });
-
