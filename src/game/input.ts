@@ -1,4 +1,4 @@
-import { type Controls } from './types';
+import { clamp, type Controls } from './types';
 
 export function cameraRelativeAxes(side: number, forward: number, yaw: number) {
   return { x: side * Math.cos(yaw) - forward * Math.sin(yaw), z: -side * Math.sin(yaw) - forward * Math.cos(yaw) };
@@ -6,12 +6,15 @@ export function cameraRelativeAxes(side: number, forward: number, yaw: number) {
 
 export class Input {
   keys = new Set<string>();
+  pointerX = 0;
+  pointerY = 0;
   mouseHeld = false;
   padHeld = false;
   toggle = false;
   active = false;
   device: 'mouse' | 'pad' = 'mouse';
   private right = false;
+  private capturedPointer: number | null = null;
   private lastX = 0;
   private lastY = 0;
   private events: ('press' | 'release')[] = [];
@@ -35,38 +38,44 @@ export class Input {
     });
     window.addEventListener('keyup', e => this.keys.delete(e.code));
     canvas.addEventListener('contextmenu', e => e.preventDefault());
+    canvas.addEventListener('pointerdown', e => {
+      if (this.active && e.pointerType === 'mouse' && (e.button === 0 || e.button === 2)) {
+        canvas.setPointerCapture(e.pointerId); this.capturedPointer = e.pointerId;
+      }
+    });
+    // Pointer down/up only fire for the first/last mouse button. Mouse events fire for each button in a chord.
     canvas.addEventListener('mousedown', e => {
       if (!this.active) return;
       if (e.button !== 0 && e.button !== 2) return;
       e.preventDefault();
       this.device = 'mouse';
-      if (document.pointerLockElement !== canvas) void canvas.requestPointerLock().catch(() => {});
-      this.lastX = e.clientX; this.lastY = e.clientY;
+      this.updatePointer(e);
       if (e.button === 0 && !this.mouseHeld) { this.mouseHeld = true; this.events.push('press'); }
-      if (e.button === 2) { this.right = true; canvas.style.cursor = 'grabbing'; }
+      if (e.button === 2) { this.right = true; this.lastX = e.clientX; this.lastY = e.clientY; canvas.style.cursor = 'grabbing'; }
     });
     window.addEventListener('mouseup', e => {
       if (e.button === 0 && this.mouseHeld) { this.mouseHeld = false; if (this.active && !this.toggle) this.events.push('release'); }
       if (e.button === 2) { this.right = false; canvas.style.cursor = ''; }
     });
+    canvas.addEventListener('lostpointercapture', () => { this.capturedPointer = null; this.right = false; canvas.style.cursor = ''; });
     canvas.addEventListener('pointercancel', () => { this.clear(); this.onFocusLost(); });
     window.addEventListener('pointermove', e => {
       if (!this.active) return;
-      if (document.pointerLockElement === canvas) {
-        this.lookX += e.movementX * .003;
-        this.lookY += e.movementY * .0025;
-      } else if (this.right || this.mouseHeld) {
-        this.lookX += (e.clientX - this.lastX) * .003;
-        this.lookY += (e.clientY - this.lastY) * .0025;
+      if (this.right) {
+        this.lookX += (e.clientX - this.lastX) * .004;
+        this.lookY += (e.clientY - this.lastY) * .003;
         this.lastX = e.clientX; this.lastY = e.clientY;
-      }
-    });
-    document.addEventListener('pointerlockchange', () => {
-      canvas.style.cursor = document.pointerLockElement === canvas ? 'none' : this.right ? 'grabbing' : '';
+      } else this.updatePointer(e);
     });
     window.addEventListener('blur', () => { this.clear(); this.onFocusLost(); });
     document.addEventListener('visibilitychange', () => { if (document.hidden) { this.clear(); this.onFocusLost(); } });
     window.addEventListener('gamepaddisconnected', () => { if (this.device === 'pad') { this.clear(); this.onFocusLost(); } });
+  }
+
+  private updatePointer(e: MouseEvent) {
+    const r = this.canvas.getBoundingClientRect();
+    this.pointerX = clamp((e.clientX - r.left) / r.width * 2 - 1, -1, 1);
+    this.pointerY = clamp(-((e.clientY - r.top) / r.height * 2 - 1), -1, 1);
   }
 
   pollPad(dt: number): void {
@@ -78,7 +87,7 @@ export class Input {
     const lx = axis(pad.axes[2] ?? 0), ly = axis(pad.axes[3] ?? 0);
     const trigger = pad.buttons[7]?.value ?? 0;
     if (Math.abs(lx) + Math.abs(ly) + Math.abs(this.stick.x) + Math.abs(this.stick.z) + trigger > .1) {
-      this.device = 'pad';
+      this.device = 'pad'; this.pointerX = 0; this.pointerY = 0;
       this.lookX += lx * dt * 2.4; this.lookY += ly * dt * 1.7;
     }
     const pressed = this.padHeld ? trigger > .35 : trigger > .55;
@@ -111,7 +120,8 @@ export class Input {
     this.keys.clear(); this.events.length = 0; this.jump = false; this.right = false; this.mouseHeld = false; this.padHeld = false;
     this.padJump = false; this.padPause = false; this.lookX = 0; this.lookY = 0; this.stick = { x: 0, z: 0 };
     this.padDive = false;
-    if (document.pointerLockElement === this.canvas) document.exitPointerLock();
     this.canvas.style.cursor = '';
+    if (this.capturedPointer !== null && this.canvas.hasPointerCapture(this.capturedPointer)) this.canvas.releasePointerCapture(this.capturedPointer);
+    this.capturedPointer = null;
   }
 }

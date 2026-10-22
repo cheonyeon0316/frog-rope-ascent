@@ -162,6 +162,7 @@ export class Garden {
   private wallRay = new THREE.Raycaster();
   private cameraRay = new THREE.Raycaster();
   private collisionMeshes: THREE.Object3D[] = [];
+  private cameraOccluders: THREE.Mesh[] = [];
   private platformRoots = new Map<string, THREE.Group>();
   private pondDecoration: THREE.Object3D[] = [];
   private cameraFades = new Map<THREE.Mesh, { original: THREE.Material | THREE.Material[]; faded: THREE.Material | THREE.Material[] }>();
@@ -572,13 +573,15 @@ export class Garden {
   }
 
   private fadeCameraOccluders(): void {
-    const direction = this.focus.clone().sub(this.camera.position);
+    // Cast from the player toward the camera so the hit is still found when the
+    // camera is already inside a mesh and cannot see that mesh's back face.
+    const direction = this.camera.position.clone().sub(this.focus);
     const distance = direction.length();
     if (distance < .01) return;
     direction.multiplyScalar(1 / distance);
-    this.cameraRay.set(this.camera.position, direction);
-    this.cameraRay.far = Math.max(0, distance - .35);
-    const occluders = new Set(this.cameraRay.intersectObjects(this.collisionMeshes, false)
+    this.cameraRay.set(this.focus, direction);
+    this.cameraRay.far = Math.max(0, distance - .25);
+    const occluders = new Set(this.cameraRay.intersectObjects(this.cameraOccluders, false)
       .map(hit => hit.object).filter((object): object is THREE.Mesh => object instanceof THREE.Mesh));
     for (const [mesh, state] of this.cameraFades) if (!occluders.has(mesh)) {
       mesh.material = state.original;
@@ -1175,7 +1178,7 @@ export class Garden {
     });
     this.ownedMaterials.forEach(m => m.dispose()); this.ownedMaterials.clear();
     this.scene.remove(this.world); this.world = new THREE.Group(); this.scene.add(this.world);
-    this.flies.clear(); this.collisionMeshes.length = 0; this.waterSurfaces.length = 0;
+    this.flies.clear(); this.collisionMeshes.length = 0; this.cameraOccluders.length = 0; this.waterSurfaces.length = 0;
     this.platformRoots.clear(); this.pondDecoration.length = 0;
     this.biomeColors = course.biomes?.map(b => b.color) ?? [];
     this.skyColors = course.biomes?.map(b => new THREE.Color(b.sky)) ?? [];
@@ -1269,6 +1272,18 @@ export class Garden {
     await this.modelAssetsReady;
     if (loadVersion !== this.modelLoadVersion) return;
     const sceneryInstalled = this.installEcosystemAssets(course) + this.installPanorama(course);
+    const flyRoots = new Set(this.flies.values());
+    this.world.traverse(object => {
+      if (!(object instanceof THREE.Mesh) || !object.visible) return;
+      let parent: THREE.Object3D | null = object;
+      while (parent && parent !== this.world) {
+        if (!parent.visible || flyRoots.has(parent as THREE.Group)) return;
+        parent = parent.parent;
+      }
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      if (materials.every(material => material.transparent && material.opacity < .98)) return;
+      this.cameraOccluders.push(object);
+    });
     this.canvas.dataset.frogAsset = 'procedural';
     this.canvas.dataset.proceduralFrogVisible = String(this.frogBody.visible);
     this.canvas.dataset.foodAssets = '0';
@@ -1563,7 +1578,7 @@ export class Garden {
       const hit = this.wallRay.intersectObjects(this.collisionMeshes, false)[0];
       if (hit) nearestBlocker = Math.min(nearestBlocker, hit.distance);
     }
-    if (nearestBlocker < offset.length()) offset.setLength(Math.max(.35, nearestBlocker - .5));
+    if (nearestBlocker < offset.length()) offset.setLength(Math.max(1.55, nearestBlocker - .42));
     this.camera.position.copy(this.focus).add(offset);
     this.camera.lookAt(this.focus);
     this.fadeCameraOccluders();
