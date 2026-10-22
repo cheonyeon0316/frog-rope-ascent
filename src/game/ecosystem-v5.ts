@@ -4,7 +4,6 @@ import { vec, type Anchor, type Course, type Landform, type Platform, type Solid
 export const ECOSYSTEM_V5_ID = 'ecosystem-main-v5';
 export const LEVEL_HEIGHT_SCALE = 3.5;
 export const WORLD_SCALE = 2;
-const START_WELL_DEPTH = 22.5;
 
 const scaleY = (y: number) => y * LEVEL_HEIGHT_SCALE;
 const worldY = scaleY;
@@ -24,42 +23,21 @@ function transformedSolid(solid: Solid): Solid {
   return { ...solid, position: vec((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2), height: Math.hypot(delta.x, delta.y, delta.z), direction: delta };
 }
 
-function landscapeHeightAt(land: NonNullable<Course['landscapes']>[number], x: number, z: number): number {
-  const resolution = land.resolution, stride = resolution + 1;
-  const gx = Math.max(0, Math.min(resolution, (x - land.position.x) / land.size.x * resolution + resolution / 2));
-  const gz = Math.max(0, Math.min(resolution, (z - land.position.z) / land.size.z * resolution + resolution / 2));
-  const x0 = Math.min(resolution - 1, Math.floor(gx)), z0 = Math.min(resolution - 1, Math.floor(gz));
-  const fx = gx - x0, fz = gz - z0;
-  const h00 = land.heights[x0 * stride + z0], h10 = land.heights[(x0 + 1) * stride + z0];
-  const h01 = land.heights[x0 * stride + z0 + 1], h11 = land.heights[(x0 + 1) * stride + z0 + 1];
-  return land.position.y + (h00 + (h10 - h00) * fx) * (1 - fz) + (h01 + (h11 - h01) * fx) * fz;
-}
-
 /** Turn each of v4's 45 landings into a three-beat route with extra catches. */
 export function makeEcosystemV5(): Course {
   const base = makeEcosystem();
-  const startingTerrain = base.landscapes?.find(landscape => landscape.zone === 0);
-  const wellRimTop = startingTerrain
-    ? landscapeHeightAt(startingTerrain, base.start.x + 5.6, base.start.z)
-    : 0;
   const solids = (base.solids ?? []).map(transformedSolid);
   const platforms = base.platforms.map(platform => {
-    if (platform.id === 'ground') return { ...platform, position: vec(0, -START_WELL_DEPTH - platform.size.y / 2, base.start.z),
-      size: vec(8.8, platform.size.y, 8.8), round: true };
     const size = copy(platform.size);
     const difficulty = exponentialDifficulty(platform.zone);
     const lateDifficulty = Math.max(0, (difficulty - .06) / .94);
     size.x *= 1 - .34 * lateDifficulty;
     size.z *= 1 - .34 * lateDifficulty;
     const authoredTop = platform.position.y + platform.size.y / 2;
-    const top = platform.id === 'pad-1' ? -9.5 : platform.id === 'pad-2' ? 2.5 : worldY(authoredTop);
-    const wellPad = platform.id === 'pad-1' || platform.id === 'pad-2';
+    const top = worldY(authoredTop);
     const position = platform.id === 'cloud-hanging-bank'
       ? { ...platform.position, x: platform.position.x - 12, z: platform.position.z - 9, y: top - size.y / 2 }
-      : wellPad
-        ? { ...platform.position, x: platform.id === 'pad-1' ? 1 : -1, z: platform.id === 'pad-1' ? base.start.z + .65 : base.start.z - .65, y: top - size.y / 2 }
-        : { ...platform.position, y: top - size.y / 2 };
-    if (wellPad) { size.x = Math.min(size.x, 3.8); size.z = Math.min(size.z, 3.8); }
+      : { ...platform.position, y: top - size.y / 2 };
     return { ...platform, position, size };
   });
   const platformById = new Map(platforms.map(platform => [platform.id, platform]));
@@ -95,9 +73,8 @@ export function makeEcosystemV5(): Course {
       const top = fromTop + (toTop - fromTop) * t;
       const zone = t < .5 ? from.zone : to.zone;
       const difficulty = exponentialDifficulty(zone);
-      const insideWell = fromTop < 0;
-      const size = insideWell ? vec(3.6, .34, 3.6) : vec(4.8 - 2.35 * difficulty, .34, 4.6 - 2.2 * difficulty);
-      const offset = insideWell ? 2.2 : 4 + 2 * difficulty;
+      const size = vec(4.8 - 2.35 * difficulty, .34, 4.6 - 2.2 * difficulty);
+      const offset = 4 + 2 * difficulty;
       const x = from.position.x + dx * t + perpendicular.x * offset * side;
       const z = from.position.z + dz * t + perpendicular.z * offset * side;
       const pad: Platform = {
@@ -105,9 +82,6 @@ export function makeEcosystemV5(): Course {
         position: vec(x, top - size.y / 2, z),
         size, zone, kind: kindFor(form), form, bend: .35, color: palette[zone],
       };
-      // The well is an open vertical tutorial shaft. Keep its bottom start
-      // surface and the exit landing, but remove every midair step below the rim.
-      if (top < wellRimTop) continue;
       bridgePads.push(pad); expandedPlatforms.push(pad);
     }
   }
@@ -132,16 +106,15 @@ export function makeEcosystemV5(): Course {
       return { ...anchor, position: { ...anchor.position,
         y: recovery ? recovery.position.y + recovery.size.y / 2 + 2.8 : worldY(anchor.position.y) } };
     });
-  // Keep a simple chain of close catches through the empty well shaft.
-  for (const anchor of base.anchors.filter(item => item.id === 'fly-1-a' || item.id === 'fly-1-b')) {
-    anchors.push({ ...anchor, position: { ...anchor.position,
-      ...(anchor.id === 'fly-1-a' ? { x: -2 } : {}),
-      y: anchor.id === 'fly-1-a' ? -17.5 : -13.5 } });
+  // Keep opening catches near the new surface start. The IDs also allow saves
+  // made during the former underground tutorial to migrate cleanly.
+  for (const [index, anchor] of base.anchors.filter(item => item.id === 'fly-1-a' || item.id === 'fly-1-b').entries()) {
+    anchors.push({ ...anchor, position: { ...anchor.position, x: index ? 2 : -2, y: index ? 7 : 4 } });
   }
-  for (const [index, y] of [-9.5, -5.5, -1.5, 2.5].entries()) {
+  for (const [index, y] of [3.5, 5.5, 7.5, 9.5].entries()) {
     const angle = index * Math.PI / 2;
-    anchors.push(foodAnchor(`well-tutorial-${index + 1}`, vec(Math.cos(angle) * 1.5, y,
-      base.start.z + Math.sin(angle) * 1.5), 0, 'fly'));
+    anchors.push(foodAnchor(`well-tutorial-${index + 1}`, vec(Math.cos(angle) * 2.2, y,
+      base.start.z + Math.sin(angle) * 2.2), 0, 'fly'));
   }
   const route: NonNullable<Course['route']> = [];
   for (let i = 0; i < expandedPlatforms.length - 1; i++) {
@@ -170,18 +143,6 @@ export function makeEcosystemV5(): Course {
   const landscapes = base.landscapes?.map(landscape => {
     const result = { ...landscape, position: copy(landscape.position), size: copy(landscape.size), heights: [...landscape.heights] };
     if (landscape.zone !== 0) return result;
-    result.hole = { x: base.start.x, z: base.start.z, radius: 5 };
-    const stride = landscape.resolution + 1;
-    for (let x = 0; x <= landscape.resolution; x++) for (let z = 0; z <= landscape.resolution; z++) {
-      const lx = (x / landscape.resolution - .5) * landscape.size.x;
-      const lz = (z / landscape.resolution - .5) * landscape.size.z;
-      const radius = Math.hypot(lx, lz - base.start.z);
-      if (radius >= 5.3) continue;
-      const index = x * stride + z, original = landscape.heights[index];
-      const floor = -START_WELL_DEPTH + .02 * Math.sin(lx * 2.1) * Math.cos(lz * 1.7);
-      const blend = Math.max(0, Math.min(1, (radius - 4.55) / .75));
-      result.heights[index] = floor * (1 - blend) + original * blend;
-    }
     return result;
   });
   const scalePosition = (p: Vec): Vec => vec(p.x * WORLD_SCALE, p.y * WORLD_SCALE, p.z * WORLD_SCALE);
@@ -190,9 +151,8 @@ export function makeEcosystemV5(): Course {
     ...base,
     id: ECOSYSTEM_V5_ID,
     height: scaleY(base.height) * WORLD_SCALE,
-    start: scalePosition({ ...base.start, y: base.start.y - START_WELL_DEPTH }),
-    platforms: platforms.filter(platform => platform.id !== 'pad-1')
-      .map(platform => ({ ...platform, position: scalePosition(platform.position), size: scaleSize(platform.size) })),
+    start: scalePosition(base.start),
+    platforms: platforms.map(platform => ({ ...platform, position: scalePosition(platform.position), size: scaleSize(platform.size) })),
     anchors: anchors.map(anchor => ({ ...anchor, position: scalePosition(anchor.position),
       motion: anchor.motion ? { ...anchor.motion, amplitude: scaleSize(anchor.motion.amplitude) } : undefined })),
     summit: { ...summit!, position: scalePosition(summit!.position), size: scaleSize(summit!.size) },

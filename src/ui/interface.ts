@@ -161,7 +161,7 @@ export class Interface {
     this.height.textContent = String(Math.floor(sim.height)); this.peak.textContent = `${Math.floor(sim.peak)} m`;
     const water = sim.water;
     const refuge = sim.refuge;
-    this.zone.textContent = water ? '이슬 속 · 수영 중' : refuge ? `${refuge.refuge} · 안쪽 지형` : sim.course.mode === 'training' ? '첫 도약 연습 · 12m' : sim.course.id === 'ecosystem-main-v5' && sim.position.y < 0 ? '깊은 우물 안' : sim.biome?.name ?? ZONES[sim.zone];
+    this.zone.textContent = water ? '이슬 속 · 수영 중' : refuge ? `${refuge.refuge} · 안쪽 지형` : sim.course.mode === 'training' ? '첫 도약 연습 · 12m' : sim.biome?.name ?? ZONES[sim.zone];
     this.timer.textContent = formatTime(sim.time);
     this.reticle.style.left = `${(pointer.x + 1) / 2 * 100}%`; this.reticle.style.top = `${(1 - pointer.y) / 2 * 100}%`;
     this.reticle.className = `reticle ${target ? 'valid' : ''} ${sim.attached ? 'attached' : ''}`;

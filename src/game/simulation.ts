@@ -12,20 +12,8 @@ const LEGACY_LAUNCH_SAVE = { duration: .3, minDuration: .1, maxDuration: 1.7 };
 export const LAUNCH_CONFIG = { speed: 8, arrivalSpeed: 3, cruiseSpeed: 7.2, minDuration: .1, maxDuration: 1.7, maxSpeed: 16 };
 const LONG_LEVEL_COURSE = 'ecosystem-main-v5';
 const LONG_LEVEL_RANGE = 12;
-const WELL_TUTORIAL_AIM_ANGLE = 26;
-const WELL_INTERIOR_RADIUS = 8.3;
 const PLACED_ROUTE_COURSES = new WeakSet<Course>();
 const copy = (p: Vec): Vec => vec(p.x, p.y, p.z);
-function landscapeHeightAt(land: NonNullable<Course['landscapes']>[number], x: number, z: number): number {
-  const resolution = land.resolution, stride = resolution + 1;
-  const gx = clamp((x - land.position.x) / land.size.x + .5, 0, 1) * resolution;
-  const gz = clamp((z - land.position.z) / land.size.z + .5, 0, 1) * resolution;
-  const x0 = Math.min(resolution - 1, Math.floor(gx)), z0 = Math.min(resolution - 1, Math.floor(gz));
-  const fx = gx - x0, fz = gz - z0;
-  const h00 = land.heights[x0 * stride + z0], h10 = land.heights[(x0 + 1) * stride + z0];
-  const h01 = land.heights[x0 * stride + z0 + 1], h11 = land.heights[(x0 + 1) * stride + z0 + 1];
-  return land.position.y + (h00 + (h10 - h00) * fx) * (1 - fz) + (h01 + (h11 - h01) * fx) * fz;
-}
 function launchCurve(t: number, duration: number, distance: number) {
   const start = LAUNCH_CONFIG.speed * duration / distance;
   const end = LAUNCH_CONFIG.arrivalSpeed * duration / distance;
@@ -84,9 +72,6 @@ export class Simulation {
   private falling = false;
   private lastLandTime = -1;
   private ropeRange = CONFIG.range;
-  private wellSurfaceY: number | null = null;
-  private wellExitCheckpoint: Vec | null = null;
-  private wellGateCollider: RAPIER.Collider | null = null;
 
   constructor(readonly course: Course) {
     this.ropeRange = course.id === LONG_LEVEL_COURSE ? LONG_LEVEL_RANGE : CONFIG.range;
@@ -113,12 +98,7 @@ export class Simulation {
       this.world.createCollider(shape.setFriction(.65).setRestitution(.03), rigid);
       if (p.kind === 'pot') this.world.createCollider(RAPIER.ColliderDesc.cylinder(.8, Math.min(p.size.x, p.size.z) * .43).setTranslation(0, -.95, 0).setFriction(.6), rigid);
     }
-    if (course.id === LONG_LEVEL_COURSE) {
-      const ground = course.landscapes?.find(land => land.zone === 0);
-      if (ground) this.wellSurfaceY = landscapeHeightAt(ground, course.start.x + 5.6 * WORLD_SCALE, course.start.z);
-    }
     for (const rock of course.rocks ?? []) {
-      if (this.isStartingWellObstruction(rock.position)) continue;
       const desc = RAPIER.ColliderDesc.convexHull(rockHull(rock.size));
       if (desc) this.world.createCollider(desc.setTranslation(rock.position.x, rock.position.y, rock.position.z).setFriction(.6));
     }
@@ -128,7 +108,7 @@ export class Simulation {
       this.world.createCollider(RAPIER.ColliderDesc.cylinder(88, .8).setFriction(.6), trunk);
     }
     for (const solid of course.solids ?? []) {
-      if (this.isStartingWellObstruction(solid.position) || solid.kind === 'grass') continue;
+      if (solid.kind === 'grass') continue;
       // Tall ornamental reeds/stems stay visible but must not form invisible
       // walls across the denser scaled route.
       this.world.createCollider(RAPIER.ColliderDesc.cylinder(solid.height / 2, solid.radius)
@@ -139,31 +119,6 @@ export class Simulation {
       const mesh = landscapeMesh(land);
       this.world.createCollider(RAPIER.ColliderDesc.trimesh(mesh.vertices, mesh.indices)
         .setTranslation(land.position.x, land.position.y, land.position.z).setFriction(.6));
-    }
-    if (course.id === LONG_LEVEL_COURSE) {
-      const ground = course.landscapes?.find(land => land.zone === 0);
-      if (ground) {
-        const surfaceY = this.wellSurfaceY ?? landscapeHeightAt(ground, course.start.x + 5.6 * WORLD_SCALE, course.start.z);
-        this.wellSurfaceY = surfaceY;
-        const gateBody = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
-        this.wellGateCollider = this.world.createCollider(RAPIER.ColliderDesc.cylinder(.14, 9.82)
-          .setTranslation(course.start.x, surfaceY + .08, course.start.z).setFriction(.65), gateBody);
-        this.wellGateCollider.setEnabled(false);
-        const exitPad = course.platforms.find(platform => platform.id === 'pad-2');
-        if (exitPad) this.wellExitCheckpoint = vec(exitPad.position.x,
-          exitPad.position.y + exitPad.size.y / 2 + .42, exitPad.position.z);
-        const bottomY = course.start.y - .95 * WORLD_SCALE;
-        const depth = surfaceY - bottomY;
-        const segments = 40, wallRadius = 4.15 * WORLD_SCALE, halfThickness = .32 * WORLD_SCALE;
-        const halfTangent = wallRadius * Math.sin(Math.PI / segments) + .045;
-        for (let i = 0; i < segments; i++) {
-          const angle = i * Math.PI * 2 / segments;
-          const rotation = { x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) };
-          this.world.createCollider(RAPIER.ColliderDesc.cuboid(halfTangent, depth / 2, halfThickness)
-            .setTranslation(course.start.x + Math.sin(angle) * wallRadius, bottomY + depth / 2, course.start.z + Math.cos(angle) * wallRadius)
-            .setRotation(rotation).setFriction(.6));
-        }
-      }
     }
     for (const a of course.anchors) {
       const p = movingAnchorPosition(a, 0);
@@ -196,36 +151,6 @@ export class Simulation {
   get position(): Vec { return copy(this.body.translation()); }
   get velocity(): Vec { return copy(this.body.linvel()); }
   get height(): number { return Math.max(0, this.body.translation().y - this.course.start.y); }
-
-  private get wellTutorialActive(): boolean {
-    return this.wellSurfaceY !== null && this.position.y < this.wellSurfaceY + .5;
-  }
-
-  private get wellTutorialCleared(): boolean {
-    return this.wellSurfaceY !== null && this.peak >= this.wellSurfaceY - this.course.start.y + .25;
-  }
-
-  get wellLocked(): boolean { return this.wellTutorialCleared; }
-
-  private isStartingWellObstruction(position: Vec): boolean {
-    if (this.course.id !== LONG_LEVEL_COURSE || this.wellSurfaceY === null) return false;
-    const inside = Math.hypot(position.x - this.course.start.x, position.z - this.course.start.z) < WELL_INTERIOR_RADIUS;
-    return inside && position.y < this.wellSurfaceY && position.y > this.course.start.y - 1.2 * WORLD_SCALE;
-  }
-
-  private secureWellExit(): void {
-    if (!this.wellTutorialCleared) return;
-    this.wellGateCollider?.setEnabled(true);
-    if (this.wellSurfaceY === null || !this.wellExitCheckpoint) return;
-    const p = this.position;
-    const insideOpening = Math.hypot(p.x - this.course.start.x, p.z - this.course.start.z) < 9.82;
-    if (!insideOpening || p.y >= this.wellSurfaceY + .3) return;
-    this.release('reset');
-    this.body.setTranslation(this.wellExitCheckpoint, true);
-    this.body.setLinvel(vec(), true);
-    this.fallHold = 0; this.falling = false; this.coyote = 0; this.jumpBuffer = 0;
-    this.events.push({ type: 'recovery', position: this.position, reason: 'well-tutorial-exit' });
-  }
 
   private placeRouteFood() {
     const route = this.course.route ?? [];
@@ -323,7 +248,7 @@ export class Simulation {
 
   selectTarget(camera: Vec, direction: Vec, assisted = false): Anchor | null {
     const p = this.position;
-    const aimAngle = this.wellTutorialActive ? WELL_TUTORIAL_AIM_ANGLE : assisted ? 12 : CONFIG.aimAngle;
+    const aimAngle = assisted ? 12 : CONFIG.aimAngle;
     const limit = Math.cos(aimAngle * Math.PI / 180);
     let best: { anchor: Anchor; alignment: number; distance: number } | null = null;
     for (const a of this.course.anchors) {
@@ -362,9 +287,7 @@ export class Simulation {
     this.joint = null;
     this.events.push({ type: reason === 'blocked' ? 'blocked' : 'release', position: this.position, anchor: anchorId ?? undefined });
     if ((reason === 'manual' || reason === 'launch') && anchorId) {
-      // Keep the opening catches available for immediate retries while the frog
-      // is still learning the rope controls inside the well.
-      if (!this.wellTutorialActive) this.eatenFlies.set(anchorId, this.time + FLY_TIMING.respawn);
+      this.eatenFlies.set(anchorId, this.time + FLY_TIMING.respawn);
       this.events.push({ type: 'eat', position: this.position, anchor: anchorId });
       if (fly) {
         const p = this.position, v = this.velocity, d = distance(p, fly.position);
@@ -544,7 +467,7 @@ export class Simulation {
       this.falling = true; this.falls++; this.events.push({ type: 'fall', position: this.position });
     }
     this.peak = Math.max(this.peak, this.height);
-    this.secureWellExit();
+
     const p = this.position;
     if (p.y < (this.course.id === LONG_LEVEL_COURSE ? this.course.start.y - 5.5 * WORLD_SCALE : -6)
       || Math.abs(p.x) > (this.course.bounds ?? 36) || Math.abs(p.z) > (this.course.bounds ?? 36)) this.resetPosition();
@@ -556,7 +479,7 @@ export class Simulation {
 
   resetPosition(): void {
     this.release('reset');
-    this.body.setTranslation(this.wellTutorialCleared && this.wellExitCheckpoint ? this.wellExitCheckpoint : this.course.start, true);
+    this.body.setTranslation(this.course.start, true);
     this.body.setLinvel(vec(), true);
     this.coyote = 0; this.jumpBuffer = 0; this.fallHold = 0; this.falling = false; this.landingHold = 0;
     this.impulseUntil = 0; this.impulseDirection = vec(); this.impulseKind = 'release'; this.impulseDuration = RELEASE_CONFIG.duration;
@@ -588,10 +511,11 @@ export class Simulation {
     for (const fly of s.eatenFlies ?? []) this.eatenFlies.set(fly.id, s.time + fly.remaining);
     for (const [id, sensor] of this.anchorTouchSensors) sensor.setEnabled(this.flyLife(id).phase !== 'hidden');
     this.touchingAnchors.clear();
-    this.body.setTranslation(s.position, true);
-    this.body.setLinvel(s.velocity, true);
-    const legacyDash = s.dash;
-    const restoredImpulse = s.swing ?? (legacyDash && legacyDash.kind !== 'launch' ? {
+    const migrateUndergroundSave = this.course.id === LONG_LEVEL_COURSE && s.position.y < this.course.start.y - 5;
+    this.body.setTranslation(migrateUndergroundSave ? this.course.start : s.position, true);
+    this.body.setLinvel(migrateUndergroundSave ? vec() : s.velocity, true);
+    const legacyDash = migrateUndergroundSave ? undefined : s.dash;
+    const restoredImpulse = migrateUndergroundSave ? undefined : s.swing ?? (legacyDash && legacyDash.kind !== 'launch' ? {
       remaining: legacyDash.remaining,
       duration: RELEASE_CONFIG.duration,
       direction: legacyDash.direction,
@@ -610,15 +534,15 @@ export class Simulation {
     this.launchStart = legacyDash?.kind === 'launch' && legacyDash.origin ? copy(legacyDash.origin) : null;
     this.launchEnd = legacyDash?.kind === 'launch' && legacyDash.targetPosition ? copy(legacyDash.targetPosition) : null;
     this.launchTarget = legacyDash?.kind === 'launch' ? legacyDash.anchor ?? null : null;
-    if (s.attached) {
+    if (s.attached && !migrateUndergroundSave) {
       const a = this.anchors.get(s.attached);
       if (!a) throw new Error('저장된 파리를 찾을 수 없습니다.');
       this.ropeLength = s.length;
       this.joint = this.world.createImpulseJoint(RAPIER.JointData.rope(s.length, vec(), vec()), this.body, a.body, true);
       this.attached = s.attached;
     }
-    this.peak = s.peak; this.time = s.time; this.tick = s.tick; this.falls = s.falls; this.finished = s.finished;
-    this.secureWellExit();
+    this.peak = migrateUndergroundSave ? 0 : s.peak; this.time = s.time; this.tick = s.tick; this.falls = s.falls; this.finished = s.finished;
+
     this.previousWater = this.water?.volume.id ?? null;
     this.events.length = 0;
   }

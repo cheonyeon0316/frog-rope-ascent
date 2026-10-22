@@ -127,7 +127,6 @@ export class Garden {
   private readonly modelAssetsReady: Promise<void>;
   private modelLoadVersion = 0;
   private world = new THREE.Group();
-  private wellGate: THREE.Group | null = null;
   private frogBody = new THREE.Group();
   private frogLegs: FrogLimb[] = [];
   private grassShapes = makeGrassShapes();
@@ -1024,74 +1023,6 @@ export class Garden {
     return placed;
   }
 
-  private installStartingWell(course: Course): void {
-    if (course.id !== 'ecosystem-main-v5') return;
-    const radius = 4.3 * WORLD_SCALE, centerZ = course.start.z;
-    const ground = course.landscapes?.find(item => item.zone === 0);
-    const surfaceY = ground ? this.landscapeHeightAt(ground, course.start.x + 5.6 * WORLD_SCALE, course.start.z) : 0;
-    const depth = surfaceY - (course.start.y - .95 * WORLD_SCALE);
-    const wallMaterial = new THREE.MeshStandardMaterial({ color: '#766b5b', roughness: 1, flatShading: true, side: THREE.DoubleSide });
-    this.ownedMaterials.add(wallMaterial);
-    const wall = this.mesh(new THREE.CylinderGeometry(radius, radius, depth, 40, 16, true), wallMaterial, this.world,
-      new THREE.Vector3(course.start.x, surfaceY - depth / 2, centerZ));
-    wall.name = 'starting-well-shaft'; wall.castShadow = false; wall.receiveShadow = false;
-    const stoneMaterial = new THREE.MeshStandardMaterial({ color: '#91836c', roughness: 1, flatShading: true });
-    this.ownedMaterials.add(stoneMaterial);
-    const segments = 28, rows = 18, stones = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), stoneMaterial, segments * rows);
-    stones.name = 'starting-well-stone-lining'; stones.castShadow = false; stones.receiveShadow = false; stones.frustumCulled = false;
-    const stoneColors = ['#a09279', '#8b806e', '#766f61', '#9b8d75', '#837967'].map(color => new THREE.Color(color));
-    const dummy = new THREE.Object3D();
-    for (let row = 0; row < rows; row++) for (let segment = 0; segment < segments; segment++) {
-      const angle = (segment + (row % 2) * .5) * Math.PI * 2 / segments;
-      const y = surfaceY - .98 * WORLD_SCALE - row * (depth - 1.1 * WORLD_SCALE) / (rows - 1);
-      dummy.position.set(course.start.x + Math.cos(angle) * (radius - .04), y, centerZ + Math.sin(angle) * (radius - .04));
-      dummy.rotation.set(0, angle + Math.PI / 2, (segment % 3 - 1) * .012);
-      dummy.scale.set(.52 * WORLD_SCALE, depth / rows * .52, .28 * WORLD_SCALE); dummy.updateMatrix();
-      const index = row * segments + segment;
-      stones.setMatrixAt(index, dummy.matrix); stones.setColorAt(index, stoneColors[(segment * 7 + row * 3) % stoneColors.length]);
-    }
-    stones.instanceMatrix.needsUpdate = true; this.world.add(stones);
-    const mortar = material('#a19378', .98); this.ownedMaterials.add(mortar);
-    for (let y = -4 * WORLD_SCALE; y > -depth; y -= 4.5 * WORLD_SCALE) {
-      const seam = this.mesh(new THREE.TorusGeometry(radius - .06 * WORLD_SCALE, .09 * WORLD_SCALE, 5, 40), mortar, this.world,
-        new THREE.Vector3(course.start.x, surfaceY + y, centerZ));
-      seam.name = 'well-stone-course'; seam.rotation.x = Math.PI / 2; seam.castShadow = seam.receiveShadow = false;
-    }
-    const rimMat = material('#b5a486'); this.ownedMaterials.add(rimMat);
-    const rim = this.mesh(new THREE.TorusGeometry(4.55 * WORLD_SCALE, .42 * WORLD_SCALE, 7, 48), rimMat, this.world,
-      new THREE.Vector3(course.start.x, surfaceY + .08, centerZ));
-    rim.name = 'well-opening-rim'; rim.rotation.x = Math.PI / 2; rim.castShadow = rim.receiveShadow = false;
-    const mossMat = material('#81955b', .98); this.ownedMaterials.add(mossMat);
-    for (let i = 0; i < 8; i++) {
-      const angle = i * Math.PI / 4 + .12;
-      const moss = this.mesh(new THREE.IcosahedronGeometry(1, 0), mossMat, this.world,
-        new THREE.Vector3(course.start.x + Math.cos(angle) * 4.72 * WORLD_SCALE, surfaceY + .17 * WORLD_SCALE, centerZ + Math.sin(angle) * 4.72 * WORLD_SCALE));
-      moss.name = 'well-rim-moss'; moss.scale.set(.48 * WORLD_SCALE, .18 * WORLD_SCALE, .34 * WORLD_SCALE); moss.rotation.y = angle; moss.castShadow = false;
-    }
-    const gate = new THREE.Group();
-    gate.name = 'starting-well-tutorial-gate';
-    gate.position.set(course.start.x, surfaceY + .23, centerZ);
-    const gateWood = material('#8d7654', .92); this.ownedMaterials.add(gateWood);
-    const outer = this.mesh(new THREE.TorusGeometry(9.62, .22, 6, 48), gateWood, gate);
-    outer.rotation.x = Math.PI / 2; outer.castShadow = false;
-    for (let axis = 0; axis < 2; axis++) for (const offset of [-7.5, -5, -2.5, 0, 2.5, 5, 7.5]) {
-      const span = 2 * Math.sqrt(9.35 ** 2 - offset ** 2);
-      const slat = this.mesh(new THREE.BoxGeometry(span, .14, .2), gateWood, gate,
-        new THREE.Vector3(axis === 0 ? 0 : offset, 0, axis === 0 ? offset : 0));
-      if (axis === 1) slat.rotation.y = Math.PI / 2;
-      slat.castShadow = false; slat.receiveShadow = false;
-    }
-    gate.visible = false; this.world.add(gate); this.wellGate = gate;
-  }
-
-  private isWellShaftDecoration(course: Course, position: Vec): boolean {
-    if (course.id !== 'ecosystem-main-v5') return false;
-    const ground = course.landscapes?.find(land => land.zone === 0);
-    if (!ground || position.y >= this.landscapeHeightAt(ground, course.start.x + 5.6 * WORLD_SCALE, course.start.z)
-      || position.y <= course.start.y - 1.2 * WORLD_SCALE) return false;
-    return Math.hypot(position.x - course.start.x, position.z - course.start.z) < 8.3;
-  }
-
   private landscapeHeightAt(land: NonNullable<Course['landscapes']>[number], x: number, z: number): number {
     const resolution = land.resolution, stride = resolution + 1;
     const gx = clamp((x - land.position.x) / land.size.x + .5, 0, 1) * resolution;
@@ -1263,7 +1194,6 @@ export class Garden {
       this.stars = new THREE.Points(geometry, mat); this.world.add(this.stars);
     }
     for (const p of course.platforms) this.platform(p, !!course.biomes);
-    this.installStartingWell(course);
     const terrainAccents = ['#9aac66', '#abc276', '#b2a78e', '#b77986', '#aa9b68', '#778794', '#f7f8fc', '#85754c'];
     for (const land of course.landscapes ?? []) {
       const data = landscapeMesh(land), geometry = new THREE.BufferGeometry();
@@ -1291,12 +1221,10 @@ export class Garden {
     if (course.mode === 'main' && course.landscapes?.some(land => land.zone === 0)) this.pondBackdrop();
     for (const a of course.anchors) this.makeFly(a);
     for (const rock of course.rocks ?? []) {
-      if (this.isWellShaftDecoration(course, rock.position)) continue;
       const stone = this.mesh(new THREE.IcosahedronGeometry(1, 0), material('#9a9c87'), this.world, V(rock.position));
       stone.scale.copy(V(rock.size)); this.collisionMeshes.push(stone);
     }
     for (const solid of course.solids ?? []) {
-      if (this.isWellShaftDecoration(course, solid.position)) continue;
       const m = this.mesh(new THREE.CylinderGeometry(solid.radius, solid.radius, solid.height, 16),
         solid.kind === 'trunk' ? this.mats.bark : material(solid.kind === 'rock' ? '#756f63' : solid.kind === 'grass' ? '#648d3c' : '#71954a'), this.world, V(solid.position));
       if (solid.direction) m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), V(solid.direction).normalize());
@@ -1405,7 +1333,6 @@ export class Garden {
   }
 
   update(sim: Simulation, target: Anchor | null, dt: number, now: number, motion: boolean): void {
-    if (this.wellGate) this.wellGate.visible = sim.wellLocked;
     const p = V(sim.position), v = V(sim.velocity), speed = v.length();
     const sky = this.skyColors[sim.zone];
     if (sky) {
@@ -1591,14 +1518,7 @@ export class Garden {
     this.attachedRing.visible = !!sim.anchor;
     if (sim.anchor) { this.attachedRing.position.copy(V(sim.anchor.position)); this.attachedRing.quaternion.copy(this.camera.quaternion); }
     const authored = !!sim.course.route;
-    const wellLandscape = sim.course.id === 'ecosystem-main-v5'
-      ? sim.course.landscapes?.find(item => item.zone === 0)
-      : undefined;
-    const wellSurfaceY = wellLandscape
-      ? this.landscapeHeightAt(wellLandscape, sim.course.start.x + 5.6 * WORLD_SCALE, sim.course.start.z)
-      : 0;
-    const inStartingWell = !!wellLandscape && !sim.wellLocked && p.y < wellSurfaceY + 1.5 * WORLD_SCALE;
-    const goalFocus = p.clone().add(new THREE.Vector3(0, inStartingWell ? 1.25 * WORLD_SCALE : authored ? 1.9 : 1.05, 0));
+    const goalFocus = p.clone().add(new THREE.Vector3(0, authored ? 1.9 : 1.05, 0));
     if (sim.anchor) goalFocus.lerp(V(sim.anchor.position), .1);
     // Keep the player near screen center during a swing. A small lead preserves
     // direction cues without letting fast input drag the framing across the view.
@@ -1609,14 +1529,14 @@ export class Garden {
     goalFocus.add(cameraLead);
     if (!this.sceneReady) { this.focus.copy(goalFocus); this.sceneReady = true; }
     else this.focus.lerp(goalFocus, 1 - Math.exp(-dt * (sim.anchor ? 5.2 : 5.8)));
-    const wanted = (inStartingWell ? 3.25 * WORLD_SCALE : sim.anchor ? clamp(sim.ropeLength * .62 + (authored ? 5.2 : 3.4), authored ? 9.5 : 7.5, authored ? 12.5 : 10.5) : authored ? 10.5 : 8)
+    const wanted = (sim.anchor ? clamp(sim.ropeLength * .62 + (authored ? 5.2 : 3.4), authored ? 9.5 : 7.5, authored ? 12.5 : 10.5) : authored ? 10.5 : 8)
       + Math.min(.45, speed * .018);
     this.distance = THREE.MathUtils.lerp(this.distance, wanted, 1 - Math.exp(-dt * 2.8));
     const drift = motion && !sim.attached ? Math.sin(now * .42) * .026 : 0;
     // Keep biome transitions from rotating the view underneath camera-relative WASD.
     const yaw = this.yaw + drift;
     this.renderedYaw = yaw;
-    const pitch = this.pitch + (inStartingWell ? .42 : 0) + (motion && !sim.attached ? Math.sin(now * .31 + 1.4) * .009 : 0);
+    const pitch = this.pitch + (motion && !sim.attached ? Math.sin(now * .31 + 1.4) * .009 : 0);
     const offset = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(this.distance);
     const direction = offset.clone().normalize();
     const cameraRight = new THREE.Vector3().crossVectors(direction, new THREE.Vector3(0, 1, 0)).normalize();
@@ -1634,20 +1554,6 @@ export class Garden {
     }
     if (nearestBlocker < offset.length()) offset.setLength(Math.max(.35, nearestBlocker - .5));
     this.camera.position.copy(this.focus).add(offset);
-    if (inStartingWell) {
-      // Keep the viewpoint inside the shaft until the frog has cleared its rim.
-      // The radial limit leaves a small gap from the inner stone lining.
-      const dx = this.camera.position.x - sim.course.start.x;
-      const dz = this.camera.position.z - sim.course.start.z;
-      const radialDistance = Math.hypot(dx, dz);
-      const safeRadius = 3.35 * WORLD_SCALE;
-      if (radialDistance > safeRadius) {
-        const scale = safeRadius / radialDistance;
-        this.camera.position.x = sim.course.start.x + dx * scale;
-        this.camera.position.z = sim.course.start.z + dz * scale;
-      }
-      this.camera.position.y = clamp(this.camera.position.y, sim.course.start.y - .4 * WORLD_SCALE, wellSurfaceY - .45 * WORLD_SCALE);
-    }
     this.camera.lookAt(this.focus);
     this.fadeCameraOccluders();
     const speedFactor = clamp((speed - 3) / 22, 0, 1);
