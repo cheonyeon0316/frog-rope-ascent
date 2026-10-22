@@ -1528,7 +1528,18 @@ export class Garden {
     cameraLead.y = clamp(cameraLead.y, -.32, .62);
     goalFocus.add(cameraLead);
     if (!this.sceneReady) { this.focus.copy(goalFocus); this.sceneReady = true; }
-    else this.focus.lerp(goalFocus, 1 - Math.exp(-dt * (sim.anchor ? 5.2 : 5.8)));
+    else {
+      const horizontalFollow = 1 - Math.exp(-dt * (sim.anchor ? 5.2 : 5.8));
+      const verticalGap = goalFocus.y - this.focus.y;
+      const verticalDeadZone = sim.anchor ? .42 : .32;
+      const verticalTarget = Math.abs(verticalGap) > verticalDeadZone
+        ? goalFocus.y - Math.sign(verticalGap) * verticalDeadZone
+        : this.focus.y;
+      const verticalFollow = 1 - Math.exp(-dt * (sim.anchor ? 7 : 8.5));
+      this.focus.x += (goalFocus.x - this.focus.x) * horizontalFollow;
+      this.focus.y += (verticalTarget - this.focus.y) * verticalFollow;
+      this.focus.z += (goalFocus.z - this.focus.z) * horizontalFollow;
+    }
     const wanted = (sim.anchor ? clamp(sim.ropeLength * .62 + (authored ? 5.2 : 3.4), authored ? 9.5 : 7.5, authored ? 12.5 : 10.5) : authored ? 10.5 : 8)
       + Math.min(.45, speed * .018);
     this.distance = THREE.MathUtils.lerp(this.distance, wanted, 1 - Math.exp(-dt * 2.8));
