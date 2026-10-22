@@ -38,6 +38,9 @@ export class Input {
     });
     window.addEventListener('keyup', e => this.keys.delete(e.code));
     canvas.addEventListener('contextmenu', e => e.preventDefault());
+    window.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'mouse') this.updatePointer(e);
+    });
     canvas.addEventListener('pointerdown', e => {
       if (this.active && e.pointerType === 'mouse' && (e.button === 0 || e.button === 2)) {
         canvas.setPointerCapture(e.pointerId); this.capturedPointer = e.pointerId;
@@ -60,12 +63,15 @@ export class Input {
     canvas.addEventListener('lostpointercapture', () => { this.capturedPointer = null; this.right = false; canvas.style.cursor = ''; });
     canvas.addEventListener('pointercancel', () => { this.clear(); this.onFocusLost(); });
     window.addEventListener('pointermove', e => {
-      if (!this.active) return;
+      if (!this.active) {
+        if (e.pointerType === 'mouse') this.updatePointer(e);
+        return;
+      }
       if (this.right) {
         this.lookX += (e.clientX - this.lastX) * .004;
         this.lookY += (e.clientY - this.lastY) * .003;
         this.lastX = e.clientX; this.lastY = e.clientY;
-      } else this.updatePointer(e);
+      } else if (e.pointerType === 'mouse') this.updatePointer(e);
     });
     window.addEventListener('blur', () => { this.clear(); this.onFocusLost(); });
     document.addEventListener('visibilitychange', () => { if (document.hidden) { this.clear(); this.onFocusLost(); } });
