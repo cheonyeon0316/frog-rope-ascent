@@ -165,6 +165,8 @@ export class Garden {
   private platformRoots = new Map<string, THREE.Group>();
   private pondDecoration: THREE.Object3D[] = [];
   private cameraFades = new Map<THREE.Mesh, { original: THREE.Material | THREE.Material[]; faded: THREE.Material | THREE.Material[] }>();
+  private frogGhostMaterials = new Map<THREE.Mesh, { original: THREE.Material | THREE.Material[]; ghost: THREE.Material | THREE.Material[]; renderOrder: number }>();
+  private frogOccluded = false;
   private ownedMaterials = new Set<THREE.Material>();
   private biomeColors: string[] = [];
   private skyColors: THREE.Color[] = [];
@@ -223,7 +225,7 @@ export class Garden {
     this.sunDisc = new THREE.Sprite(sunMaterial); this.sunDisc.name = 'low-poly-garden-sun';
     this.sunDisc.scale.set(8, 8, 1); this.sunDisc.renderOrder = -900; this.scene.add(this.sunDisc);
     this.slimeTongue = new Tongue(this.mats.slime, .024, .009);
-    this.makeFrog(); this.frog.scale.setScalar(.64); this.scene.add(this.frog, this.tongue.mesh, this.slimeTongue.mesh, this.targetRing, this.attachedRing);
+    this.makeFrog(); this.frog.scale.setScalar(.64); this.prepareFrogGhostMaterials(); this.scene.add(this.frog, this.tongue.mesh, this.slimeTongue.mesh, this.targetRing, this.attachedRing);
     const slimeGeometry = new THREE.SphereGeometry(1, 8, 6);
     this.slimeDrops = Array.from({ length: 9 }, () => {
       const drop = this.mesh(slimeGeometry, this.mats.slime, this.scene);
@@ -569,6 +571,46 @@ export class Garden {
       else state.faded.dispose();
     }
     this.cameraFades.clear();
+  }
+
+  private prepareFrogGhostMaterials(): void {
+    const makeGhost = (material: THREE.Material) => {
+      const ghost = material.clone();
+      ghost.transparent = true;
+      ghost.opacity = .38;
+      ghost.depthTest = false;
+      ghost.depthWrite = false;
+      ghost.needsUpdate = true;
+      return ghost;
+    };
+    this.frog.traverse(object => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const original = object.material;
+      const ghost = Array.isArray(original) ? original.map(makeGhost) : makeGhost(original);
+      this.frogGhostMaterials.set(object, { original, ghost, renderOrder: object.renderOrder });
+    });
+  }
+
+  private setFrogOccluded(occluded: boolean): void {
+    if (this.frogOccluded === occluded) return;
+    this.frogOccluded = occluded;
+    for (const [mesh, state] of this.frogGhostMaterials) {
+      mesh.material = occluded ? state.ghost : state.original;
+      mesh.renderOrder = occluded ? 20 : state.renderOrder;
+    }
+  }
+
+  private updateFrogOcclusion(): void {
+    const frogPoint = this.frog.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, .35, 0));
+    const direction = frogPoint.sub(this.camera.position);
+    const distance = direction.length();
+    if (distance < .05) {
+      this.setFrogOccluded(false);
+      return;
+    }
+    this.wallRay.set(this.camera.position, direction.multiplyScalar(1 / distance));
+    this.wallRay.far = Math.max(0, distance - .2);
+    this.setFrogOccluded(this.wallRay.intersectObjects(this.collisionMeshes, false).length > 0);
   }
 
   private fadeCameraOccluders(): void {
@@ -1549,24 +1591,10 @@ export class Garden {
     this.renderedYaw = yaw;
     const pitch = this.pitch + (motion && !sim.attached ? Math.sin(now * .31 + 1.4) * .009 : 0);
     const offset = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(this.distance);
-    const direction = offset.clone().normalize();
-    const cameraRight = new THREE.Vector3().crossVectors(direction, new THREE.Vector3(0, 1, 0)).normalize();
-    const cameraVertical = new THREE.Vector3().crossVectors(cameraRight, direction).normalize();
-    const shoulder = .38;
-    const probes = [
-      new THREE.Vector3(), cameraRight.clone().multiplyScalar(shoulder), cameraRight.clone().multiplyScalar(-shoulder),
-      cameraVertical.clone().multiplyScalar(shoulder), cameraVertical.clone().multiplyScalar(-shoulder),
-    ];
-    let nearestBlocker = offset.length();
-    for (const probe of probes) {
-      this.wallRay.set(this.focus.clone().add(probe), direction); this.wallRay.far = offset.length();
-      const hit = this.wallRay.intersectObjects(this.collisionMeshes, false)[0];
-      if (hit) nearestBlocker = Math.min(nearestBlocker, hit.distance);
-    }
-    if (nearestBlocker < offset.length()) offset.setLength(Math.max(.35, nearestBlocker - .5));
     this.camera.position.copy(this.focus).add(offset);
     this.camera.lookAt(this.focus);
     this.fadeCameraOccluders();
+    this.updateFrogOcclusion();
     const speedFactor = clamp((speed - 3) / 22, 0, 1);
     const wantedFov = 60 + speedFactor * 3.5 + (sim.attached && horizontalSpeed > 5 ? .6 : 0);
     this.cameraFov = THREE.MathUtils.lerp(this.cameraFov, wantedFov, 1 - Math.exp(-dt * 2.6));
@@ -1594,3 +1622,4 @@ export class Garden {
     this.renderer.render(this.scene, this.camera);
   }
 }
+
