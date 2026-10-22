@@ -13,9 +13,9 @@ export function parseBackup(text: string): Backup {
   if (!data || typeof data !== 'object') throw new Error('게임 백업 파일이 아닙니다.');
   const b = data as Backup;
   if (b.format !== 'frog-ascent-backup' || b.version !== 1 || typeof b.createdAt !== 'string'
-    || !Number.isFinite(b.best) || b.best < 0 || b.best > 200) throw new Error('지원하지 않는 백업 형식입니다.');
+    || !Number.isFinite(b.best) || b.best < 0 || b.best > 2000) throw new Error('지원하지 않는 백업 형식입니다.');
   for (const state of [b.current, b.previous]) {
-    if (state !== null && (!validSave(state) || state.mode !== 'main' || !['garden-main-v1', 'ecosystem-main-v2', 'ecosystem-main-v3'].includes(state.course)))
+    if (state !== null && (!validSave(state) || state.mode !== 'main' || !['garden-main-v1', 'ecosystem-main-v2', 'ecosystem-main-v3', 'ecosystem-main-v4', 'ecosystem-main-v5'].includes(state.course)))
       throw new Error('현재 정원에서 불러올 수 없는 진행 상태입니다.');
   }
   const s = b.settings;

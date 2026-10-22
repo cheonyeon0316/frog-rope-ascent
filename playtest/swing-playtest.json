@@ -1,0 +1,103 @@
+{
+  "results": [
+    {
+      "check": "Space remains a ground jump when no food is attached",
+      "passed": true,
+      "from": {
+        "state": "playing",
+        "attached": "",
+        "height": 0,
+        "biome": "",
+        "swing": "",
+        "v": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "afterJump": {
+        "state": "playing",
+        "attached": "",
+        "height": 0.03,
+        "biome": "",
+        "swing": "",
+        "v": {
+          "x": 0,
+          "y": -7.201,
+          "z": 0
+        }
+      }
+    },
+    {
+      "check": "Space consumes the attached fly and follows a shallow arcing dash to its position, then preserves arrival momentum",
+      "before": {
+        "state": "playing",
+        "attached": "fly-0",
+        "height": 0.59,
+        "biome": "",
+        "swing": "",
+        "v": {
+          "x": -5.22,
+          "y": 3.918,
+          "z": 2.872
+        }
+      },
+      "launch": {
+        "state": "playing",
+        "attached": "",
+        "height": 1,
+        "biome": "",
+        "swing": "eat-swing",
+        "v": {
+          "x": 4.348,
+          "y": 9.984,
+          "z": -2.46
+        }
+      },
+      "after": {
+        "state": "playing",
+        "attached": "",
+        "height": 4.26,
+        "biome": "",
+        "swing": "",
+        "v": {
+          "x": 1.628,
+          "y": 0.754,
+          "z": -0.921
+        }
+      }
+    },
+    {
+      "check": "expanded 770m course loads with three times the route beats",
+      "course": "ecosystem-main-v5",
+      "state": {
+        "state": "playing",
+        "attached": "",
+        "height": 0,
+        "biome": "",
+        "swing": "",
+        "v": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    },
+    {
+      "check": "revised gorge segment loads from a real landing surface",
+      "state": {
+        "state": "playing",
+        "attached": "",
+        "height": 182.25,
+        "biome": "rocks",
+        "swing": "",
+        "v": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    }
+  ],
+  "errors": []
+}

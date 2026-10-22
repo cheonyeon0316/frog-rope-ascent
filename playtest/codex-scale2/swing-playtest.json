@@ -1,0 +1,110 @@
+{
+  "results": [
+    {
+      "check": "Space remains a ground jump when no food is attached",
+      "passed": true,
+      "from": {
+        "state": "playing",
+        "attached": "",
+        "height": 0,
+        "biome": "",
+        "swing": "",
+        "v": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "afterJump": {
+        "state": "playing",
+        "attached": "",
+        "height": 0.09,
+        "biome": "",
+        "swing": "",
+        "v": {
+          "x": 0,
+          "y": -7.053,
+          "z": 0
+        }
+      }
+    },
+    {
+      "check": "Space consumes the attached fly and follows a shallow arcing dash to its position, then preserves arrival momentum",
+      "before": {
+        "state": "playing",
+        "attached": "fly-0",
+        "height": 0.66,
+        "biome": "",
+        "swing": "",
+        "v": {
+          "x": -5.167,
+          "y": 3.936,
+          "z": 2.841
+        }
+      },
+      "launch": {
+        "state": "playing",
+        "attached": "",
+        "height": 1.03,
+        "biome": "",
+        "swing": "eat-swing",
+        "v": {
+          "x": 4.32,
+          "y": 10.008,
+          "z": -2.445
+        }
+      },
+      "after": {
+        "state": "playing",
+        "attached": "",
+        "height": 4.25,
+        "biome": "",
+        "swing": "",
+        "v": {
+          "x": 1.618,
+          "y": 0.914,
+          "z": -0.916
+        }
+      }
+    },
+    {
+      "check": "expanded 1540m course loads with 221 route beats",
+      "course": "ecosystem-main-v5",
+      "metrics": {
+        "height": 1540,
+        "routeBeats": 221,
+        "bridgePads": 174,
+        "landHoleRadius": 10,
+        "wellOpeningRadius": 8.6
+      },
+      "state": {
+        "state": "playing",
+        "attached": "",
+        "height": 0,
+        "biome": "",
+        "swing": "",
+        "v": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    },
+    {
+      "check": "revised gorge segment loads from a real landing surface",
+      "state": {
+        "state": "playing",
+        "attached": "",
+        "height": 364.1,
+        "biome": "rocks",
+        "swing": "",
+        "v": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    }
+  ],
+  "errors": []
+}

@@ -4,10 +4,12 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { type Course, type Anchor, type Platform, type WaterVolume, type Vec, clamp, COLORS } from '../game/types';
 import { FLY_TIMING, type Simulation } from '../game/simulation';
 import { landscapeMesh, starMesh, cloudClumps, platformMesh, bladeHeight } from '../game/environment';
+import { WORLD_SCALE } from '../game/ecosystem-v5';
 
 const V = (p: Vec) => new THREE.Vector3(p.x, p.y, p.z);
 const material = (color: THREE.ColorRepresentation, roughness = .85) => new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 type LoadedModel = Awaited<ReturnType<GLTFLoader['loadAsync']>>;
+type SlimeDrop = { mesh: THREE.Mesh; velocity: THREE.Vector3; life: number; maxLife: number };
 
 const MODEL_FILES: Record<string, string> = {
   'pond-basin': 'assets/eco-pond/mdl_env_pond_basin.glb', 'pond-leaf': 'assets/eco-pond/mdl_env_leaf_round.glb',
@@ -73,7 +75,8 @@ class Tongue {
   private sides = 6;
   private positions: THREE.BufferAttribute;
   private normals: THREE.BufferAttribute;
-  constructor() {
+  constructor(private readonly tongueMaterial: THREE.Material = material('#ec8198', .4),
+    private readonly baseRadius = .06, private readonly taperRadius = .017) {
     const geo = new THREE.BufferGeometry();
     const vertices = (this.segments + 1) * this.sides;
     this.positions = new THREE.BufferAttribute(new Float32Array(vertices * 3), 3);
@@ -85,7 +88,7 @@ class Tongue {
       index.push(a, b, a + this.sides, b, b + this.sides, a + this.sides);
     }
     geo.setIndex(index);
-    this.mesh = new THREE.Mesh(geo, material('#ec8198', .4));
+    this.mesh = new THREE.Mesh(geo, tongueMaterial);
     this.mesh.frustumCulled = false;
     this.mesh.visible = false;
   }
@@ -97,7 +100,7 @@ class Tongue {
     for (let i = 0; i <= this.segments; i++) {
       const t = i / this.segments;
       const p = new THREE.Vector3().lerpVectors(a, b, t); p.y -= Math.sin(t * Math.PI) * slack;
-      const radius = (.06 - .017 * t) * scale;
+      const radius = (this.baseRadius - this.taperRadius * t) * scale;
       for (let j = 0; j < this.sides; j++) {
         const angle = j / this.sides * Math.PI * 2;
         const normal = right.clone().multiplyScalar(Math.cos(angle)).addScaledVector(up, Math.sin(angle));
@@ -115,11 +118,16 @@ export class Garden {
   readonly renderer: THREE.WebGLRenderer;
   readonly frog = new THREE.Group();
   readonly tongue = new Tongue();
+  private slimeTongue!: Tongue;
+  private slimeDrops: SlimeDrop[] = [];
+  private slimeDropCursor = 0;
+  private nextSlimeDrop = 0;
   private readonly modelLoader = new GLTFLoader();
   private readonly modelAssets = new Map<string, LoadedModel>();
   private readonly modelAssetsReady: Promise<void>;
   private modelLoadVersion = 0;
   private world = new THREE.Group();
+  private wellGate: THREE.Group | null = null;
   private frogBody = new THREE.Group();
   private frogLegs: FrogLimb[] = [];
   private grassShapes = makeGrassShapes();
@@ -164,12 +172,14 @@ export class Garden {
   private skyZenithColors: THREE.Color[] = [];
   private skyDomeMaterial!: THREE.ShaderMaterial;
   private stars: THREE.Points | null = null;
+  private sunDisc!: THREE.Sprite;
   private mats = {
     frog: material('#719b58', .72), belly: material('#ded8b0', .82), dark: material('#354235', .52), white: material('#fff9e7', .28),
     toe: material('#c6b35f', .68), iris: material('#a9965d', .48),
     bark: material('#755848'), leaf: material('#6c9651'), leafTop: material('#a0bc6b'), pot: material('#bc805b'),
     metal: material('#61938a', .5), water: material('#8bbbc0', .35), fly: material('#5e6557'), pink: material('#e99da6'),
     swing: new THREE.MeshBasicMaterial({ color: '#fff6d7', transparent: true, opacity: .6, depthWrite: false }),
+    slime: new THREE.MeshPhysicalMaterial({ color: '#a4d987', roughness: .2, metalness: 0, transparent: true, opacity: .72, depthWrite: false, clearcoat: .9, clearcoatRoughness: .12 }),
   };
 
   get movementYaw() { return this.renderedYaw; }
@@ -186,10 +196,10 @@ export class Garden {
     this.skyDomeMaterial = new THREE.ShaderMaterial({
       uniforms: { horizon: { value: new THREE.Color('#dce8ce') }, zenith: { value: new THREE.Color('#a9cee5') } },
       vertexShader: 'varying vec3 vDirection; void main(){ vec4 worldPosition=modelMatrix*vec4(position,1.0); vDirection=normalize(worldPosition.xyz-cameraPosition); gl_Position=projectionMatrix*viewMatrix*worldPosition; }',
-      fragmentShader: 'uniform vec3 horizon; uniform vec3 zenith; varying vec3 vDirection; void main(){ float h=smoothstep(-0.28,0.72,vDirection.y); float haze=pow(1.0-abs(vDirection.y-0.08),5.0); vec3 color=mix(horizon,zenith,h); color=mix(color,vec3(1.0,0.83,0.66),haze*0.12); gl_FragColor=vec4(color,1.0); }',
+      fragmentShader: 'uniform vec3 horizon; uniform vec3 zenith; varying vec3 vDirection; void main(){ vec3 d=normalize(vDirection); float h=smoothstep(-0.28,0.72,d.y); float haze=pow(1.0-abs(d.y-0.08),5.0); float az=atan(d.z,d.x); float ridge=sin(az*4.7+0.7)*0.025+sin(az*9.3+1.8)*0.016+sin(az*17.1-0.6)*0.009; float farLine=0.205+ridge*1.25; float nearLine=0.125+ridge; vec3 color=mix(horizon,zenith,h); color=mix(color,vec3(0.55,0.65,0.69),1.0-smoothstep(farLine-0.006,farLine+0.006,d.y)); color=mix(color,vec3(0.45,0.57,0.43),1.0-smoothstep(nearLine-0.005,nearLine+0.005,d.y)); float cloudWave=sin(az*11.0+sin(az*3.0)*1.7)+sin(az*23.0+1.4)*0.32; float cloudBand=smoothstep(0.34,0.62,cloudWave)*smoothstep(0.15,0.27,d.y)*(1.0-smoothstep(0.52,0.7,d.y)); color=mix(color,vec3(1.0,0.87,0.73),cloudBand*0.25); color=mix(color,vec3(1.0,0.83,0.66),haze*0.06); gl_FragColor=vec4(color,1.0); }',
       side: THREE.BackSide, depthWrite: false, depthTest: false, toneMapped: false,
     });
-    const skyDome = new THREE.Mesh(new THREE.SphereGeometry(260, 32, 20), this.skyDomeMaterial);
+    const skyDome = new THREE.Mesh(new THREE.SphereGeometry(1000, 64, 40), this.skyDomeMaterial);
     skyDome.name = 'ecosystem-sky-gradient'; skyDome.frustumCulled = false; skyDome.renderOrder = -1000; this.scene.add(skyDome);
     this.scene.add(new THREE.HemisphereLight('#fff2d7', '#546f51', 1.45));
     const fill = new THREE.DirectionalLight('#c8e8f0', .72); fill.position.set(-18, 12, -20); this.scene.add(fill);
@@ -202,7 +212,25 @@ export class Garden {
     this.sun.shadow.camera.near = .5; this.sun.shadow.camera.far = 90;
     this.sun.shadow.normalBias = .04;
     this.scene.add(this.sun, this.sun.target, this.world);
-    this.makeFrog(); this.frog.scale.setScalar(.64); this.scene.add(this.frog, this.tongue.mesh, this.targetRing, this.attachedRing);
+    const glowCanvas = document.createElement('canvas'); glowCanvas.width = glowCanvas.height = 128;
+    const glowContext = glowCanvas.getContext('2d')!;
+    const glow = glowContext.createRadialGradient(64, 64, 3, 64, 64, 62);
+    glow.addColorStop(0, 'rgba(255,250,220,1)'); glow.addColorStop(.18, 'rgba(255,235,175,.95)');
+    glow.addColorStop(.46, 'rgba(255,205,135,.38)'); glow.addColorStop(1, 'rgba(255,196,130,0)');
+    glowContext.fillStyle = glow; glowContext.fillRect(0, 0, 128, 128);
+    const sunTexture = new THREE.CanvasTexture(glowCanvas); sunTexture.colorSpace = THREE.SRGBColorSpace;
+    const sunMaterial = new THREE.SpriteMaterial({ map: sunTexture, color: '#fff6dd', transparent: true,
+      depthWrite: false, depthTest: false, toneMapped: false, opacity: .9 });
+    this.sunDisc = new THREE.Sprite(sunMaterial); this.sunDisc.name = 'low-poly-garden-sun';
+    this.sunDisc.scale.set(8, 8, 1); this.sunDisc.renderOrder = -900; this.scene.add(this.sunDisc);
+    this.slimeTongue = new Tongue(this.mats.slime, .024, .009);
+    this.makeFrog(); this.frog.scale.setScalar(.64); this.scene.add(this.frog, this.tongue.mesh, this.slimeTongue.mesh, this.targetRing, this.attachedRing);
+    const slimeGeometry = new THREE.SphereGeometry(1, 8, 6);
+    this.slimeDrops = Array.from({ length: 9 }, () => {
+      const drop = this.mesh(slimeGeometry, this.mats.slime, this.scene);
+      drop.visible = false; drop.castShadow = false; drop.receiveShadow = false;
+      return { mesh: drop, velocity: new THREE.Vector3(), life: 0, maxLife: .72 };
+    });
     for (let i = 0; i < 7; i++) this.mesh(new THREE.ConeGeometry(.06, .22, 4), this.mats.swing, this.swingBurst);
     this.swingBurst.visible = false; this.scene.add(this.swingBurst);
     this.targetRing.renderOrder = 3; this.attachedRing.renderOrder = 3;
@@ -348,16 +376,16 @@ export class Garden {
 
   private grassOnLandscape(parent: THREE.Object3D, land: NonNullable<Course['landscapes']>[number], course: Course): void {
     if (land.zone !== 0 && land.zone !== 1) return;
-    // The authored ecosystem uses a handful of complete grass clumps from the GLB kit
-    // below. Thousands of procedural blades made those careful landmarks hard to read.
-    if (course.id === 'ecosystem-main-v3') return;
+    // Keep enough grass to soften the broad starting island while leaving a clear
+    // corridor around every landing and food anchor.
+    const authoredEcosystem = ['ecosystem-main-v3', 'ecosystem-main-v4', 'ecosystem-main-v5'].includes(course.id);
     const points: THREE.Vector3[] = [];
     let state = 0x51f15e + land.zone;
     const random = () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 0x100000000; };
     const nextPads = course.platforms.filter(p => p.zone === land.zone).map(p => p.position);
     const foods = course.anchors.filter(a => a.zone === land.zone).map(a => a.position);
     const resolution = land.resolution, stride = resolution + 1;
-    for (let i = 0; i < (land.zone === 0 ? 185 : 175); i++) {
+    for (let i = 0; i < (authoredEcosystem ? 480 : land.zone === 0 ? 185 : 175); i++) {
       const lx = (random() - .5) * land.size.x * .94, lz = (random() - .5) * land.size.z * .94;
       const gx = (lx / land.size.x + .5) * resolution, gz = (lz / land.size.z + .5) * resolution;
       const x0 = Math.min(resolution - 1, Math.floor(gx)), z0 = Math.min(resolution - 1, Math.floor(gz));
@@ -368,10 +396,55 @@ export class Garden {
       const x = land.position.x + lx, y = land.position.y + h + .025, z = land.position.z + lz;
       if (Math.hypot(lx, lz) > land.size.x * .44 || nextPads.some(p => Math.hypot(p.x - x, p.z - z) < 1.8)
         || foods.some(a => Math.hypot(a.x - x, a.z - z) < 1.15)
+        || course.id === 'ecosystem-main-v5' && land.zone === 0 && Math.hypot(x - course.start.x, z - course.start.z) < 9.8
         || land.zone === 0 && (Math.hypot(x + 6, z + 4) < 7.4 || Math.hypot(x, z - 3.5) < 1.8)) continue;
       points.push(new THREE.Vector3(x, y, z));
     }
     this.grassField(parent, points, 0x6a4d3 + land.zone);
+  }
+
+  private flowersOnIsland(parent: THREE.Object3D, land: NonNullable<Course['landscapes']>[number], course: Course): void {
+    if (land.zone !== 0 || !['ecosystem-main-v3', 'ecosystem-main-v4', 'ecosystem-main-v5'].includes(course.id)) return;
+    let seed = 0x41c64e6d;
+    const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 0x100000000; };
+    const pads = course.platforms.filter(p => p.zone === 0).map(p => p.position);
+    const foods = course.anchors.filter(a => a.zone === 0).map(a => a.position);
+    const positions: { x: number; y: number; z: number; height: number; color: THREE.Color }[] = [];
+    const colors = ['#fff4d3', '#f4d6bc', '#f5c5c4', '#f0dc9f'].map(color => new THREE.Color(color));
+    for (let attempt = 0; attempt < 420 && positions.length < 78; attempt++) {
+      const x = (random() - .5) * land.size.x * .9, z = (random() - .5) * land.size.z * .9;
+      if (Math.hypot(x, z) > land.size.x * .43 || Math.hypot(x + 6, z + 4) < 7.7 || Math.hypot(x, z - 3.5) < 2.2
+        || course.id === 'ecosystem-main-v5' && Math.hypot(land.position.x + x - course.start.x, land.position.z + z - course.start.z) < 9.8
+        || pads.some(p => Math.hypot(p.x - land.position.x - x, p.z - land.position.z - z) < 2.2)
+        || foods.some(a => Math.hypot(a.x - land.position.x - x, a.z - land.position.z - z) < 1.4)) continue;
+      positions.push({ x: land.position.x + x, y: this.landscapeHeightAt(land, land.position.x + x, land.position.z + z) + .025,
+        z: land.position.z + z, height: .28 + random() * .32, color: colors[Math.floor(random() * colors.length)] });
+    }
+    if (!positions.length) return;
+    const stemsMat = material('#587d42', .95); this.ownedMaterials.add(stemsMat);
+    const petalMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: .78, flatShading: true }); this.ownedMaterials.add(petalMat);
+    const heartMat = new THREE.MeshStandardMaterial({ color: '#f1c65f', roughness: .65, flatShading: true }); this.ownedMaterials.add(heartMat);
+    const stems = new THREE.InstancedMesh(new THREE.CylinderGeometry(.012, .022, 1, 4), stemsMat, positions.length);
+    const petals = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 6, 4), petalMat, positions.length * 5);
+    const hearts = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 6, 4), heartMat, positions.length);
+    stems.name = 'island-wildflower-stems'; petals.name = 'island-wildflower-petals'; hearts.name = 'island-wildflower-centers';
+    stems.castShadow = petals.castShadow = hearts.castShadow = false;
+    stems.receiveShadow = petals.receiveShadow = hearts.receiveShadow = false;
+    const dummy = new THREE.Object3D();
+    positions.forEach((flower, index) => {
+      const headY = flower.y + flower.height;
+      dummy.position.set(flower.x, flower.y + flower.height * .45, flower.z); dummy.scale.set(1, flower.height, 1); dummy.updateMatrix(); stems.setMatrixAt(index, dummy.matrix);
+      dummy.position.set(flower.x, headY, flower.z); dummy.scale.set(.075, .045, .075); dummy.updateMatrix(); hearts.setMatrixAt(index, dummy.matrix);
+      for (let petal = 0; petal < 5; petal++) {
+        const angle = petal * Math.PI * 2 / 5 + index * .83;
+        dummy.position.set(flower.x + Math.cos(angle) * .085, headY, flower.z + Math.sin(angle) * .085);
+        dummy.rotation.set(0, -angle, .08 * Math.sin(angle)); dummy.scale.set(.085, .035, .12); dummy.updateMatrix();
+        const instance = index * 5 + petal; petals.setMatrixAt(instance, dummy.matrix); petals.setColorAt(instance, flower.color);
+      }
+    });
+    stems.instanceMatrix.needsUpdate = true; petals.instanceMatrix.needsUpdate = true; hearts.instanceMatrix.needsUpdate = true;
+    if (petals.instanceColor) petals.instanceColor.needsUpdate = true;
+    parent.add(stems, petals, hearts);
   }
 
   private floraOnLandscape(parent: THREE.Object3D, land: NonNullable<Course['landscapes']>[number], course: Course): void {
@@ -829,15 +902,194 @@ export class Garden {
     return object;
   }
 
-  private placeScenery(assetId: string, position: Vec, width: number, yaw = 0): THREE.Group | null {
+  private placeScenery(assetId: string, position: Vec, width: number, yaw = 0, backdrop = false): THREE.Group | null {
     const visual = this.fittedAsset(assetId, width, 'horizontal', 'ground');
     if (!visual) return null;
     const placement = new THREE.Group(); placement.name = `asset-placement-${assetId}`;
     placement.position.copy(V(position)); placement.rotation.y = yaw; placement.add(visual); this.world.add(placement);
     placement.traverse(object => {
-      if (object instanceof THREE.Mesh || object instanceof THREE.SkinnedMesh) this.collisionMeshes.push(object);
+      if (object instanceof THREE.Mesh || object instanceof THREE.SkinnedMesh) {
+        object.castShadow = !backdrop; object.receiveShadow = !backdrop;
+        if (!backdrop) this.collisionMeshes.push(object);
+      }
     });
     return placement;
+  }
+
+  private installPanorama(course: Course): number {
+    const biomes = course.biomes?.length ? course.biomes : [{
+      id: 'meadow', name: '정원', start: 0, end: Math.max(40, course.height), center: { ...course.start },
+      kind: 'grass' as const, foods: ['fly' as const], sky: '#dce8ce', color: '#749d4c',
+    }];
+    let placed = 0;
+    const dummy = new THREE.Object3D();
+    for (const [zone, biome] of biomes.entries()) {
+      let seed = (0x5f3759df ^ Math.imul(zone + 1, 0x27d4eb2d)) >>> 0;
+      const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 0x100000000; };
+      const span = biome.end - biome.start;
+      const addBackdrop = (name: string, geometry: THREE.BufferGeometry, color: string, position: THREE.Vector3, scale: THREE.Vector3) => {
+        const mat = material(color, .98); this.ownedMaterials.add(mat);
+        const object = this.mesh(geometry, mat, this.world, position); object.name = `biome-${biome.id}-${name}`;
+        object.scale.copy(scale); object.castShadow = false; object.receiveShadow = false; placed++;
+        return object;
+      };
+      // Meadow woods: use the trees only in the grassland zones, so later themes
+      // get silhouettes that belong to their biome instead of repeating treetops.
+      if (biome.kind === 'grass') {
+        const count = 42;
+        const trunkMat = material('#70563d', .98), crownMat = material('#557b46', .98);
+        this.ownedMaterials.add(trunkMat); this.ownedMaterials.add(crownMat);
+        const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(.12, .22, 1, 5), trunkMat, count);
+        const crowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), crownMat, count);
+        trunks.name = `panorama-trees-${biome.id}`; crowns.name = `panorama-canopies-${biome.id}`;
+        trunks.castShadow = crowns.castShadow = false; trunks.receiveShadow = crowns.receiveShadow = false;
+        trunks.frustumCulled = crowns.frustumCulled = false;
+        for (let i = 0; i < count; i++) {
+          const angle = i / count * Math.PI * 2 + zone * .28 + (random() - .5) * .28;
+          const radius = 50 + random() * 28, x = biome.center.x + Math.cos(angle) * radius, z = biome.center.z + Math.sin(angle) * radius;
+          const height = 4.5 + random() * 3.8;
+          dummy.position.set(x, biome.start - 1 + height * .34, z); dummy.scale.set(.26 + random() * .16, height * .68, .26); dummy.rotation.y = random() * Math.PI; dummy.updateMatrix(); trunks.setMatrixAt(i, dummy.matrix);
+          dummy.position.set(x, biome.start - 1 + height * .78, z);
+          const canopy = 2.1 + random() * 1.5; dummy.scale.set(canopy, canopy * (.82 + random() * .35), canopy * (.8 + random() * .5)); dummy.updateMatrix(); crowns.setMatrixAt(i, dummy.matrix);
+          const shade = .78 + random() * .36; crowns.setColorAt(i, new THREE.Color(shade, shade, shade));
+        }
+        trunks.instanceMatrix.needsUpdate = true; crowns.instanceMatrix.needsUpdate = true;
+        if (crowns.instanceColor) crowns.instanceColor.needsUpdate = true;
+        this.world.add(trunks, crowns); placed += count;
+      }
+
+      if (biome.kind === 'rock') {
+        const colors = biome.id === 'mountain' ? ['#7f8c92', '#9ca7a5', '#687b82'] : ['#878779', '#a4a08f', '#74776c'];
+        const peaks = biome.id === 'mountain' ? 12 : 9;
+        for (let i = 0; i < peaks; i++) {
+          const angle = i * Math.PI * 2 / peaks + zone * .29 + (random() - .5) * .22;
+          const radius = 43 + random() * 22, height = span * (.48 + random() * .32);
+          addBackdrop('cliff', new THREE.IcosahedronGeometry(1, 1), colors[i % colors.length],
+            new THREE.Vector3(biome.center.x + Math.cos(angle) * radius, biome.start + height * .38, biome.center.z + Math.sin(angle) * radius),
+            new THREE.Vector3(7 + random() * 6, height, 7 + random() * 6));
+        }
+      } else if (biome.kind === 'petal' || biome.kind === 'flower') {
+        const colors = biome.id === 'dawn' ? ['#f3a3a0', '#f4bd88', '#f7d3a1'] : ['#de91ad', '#f0b3c1', '#e9a1b7'];
+        for (let i = 0; i < 14; i++) {
+          const angle = i * Math.PI * 2 / 14 + zone * .3, radius = 30 + random() * 20;
+          const petal = addBackdrop('giant-petal', new THREE.IcosahedronGeometry(1, 0), colors[i % colors.length],
+            new THREE.Vector3(biome.center.x + Math.cos(angle) * radius, biome.start + span * (.18 + random() * .3), biome.center.z + Math.sin(angle) * radius),
+            new THREE.Vector3(4.5 + random() * 2.8, span * (.28 + random() * .12), 1.7 + random() * .8));
+          petal.rotation.set(.1 + random() * .35, -angle, Math.cos(angle * 2) * .18);
+        }
+      } else if (biome.kind === 'branch') {
+        if (biome.id === 'roots') {
+          for (let i = 0; i < 18; i++) {
+            const angle = i * Math.PI * 2 / 18 + .2, radius = 24 + random() * 18, length = 12 + random() * 15;
+            const root = addBackdrop('hanging-root', new THREE.ConeGeometry(1, 1, 6), '#75634f',
+              new THREE.Vector3(biome.center.x + Math.cos(angle) * radius, biome.start + span * .68, biome.center.z + Math.sin(angle) * radius),
+              new THREE.Vector3(.8 + random() * .8, length, .8 + random() * .8));
+            root.rotation.x = Math.PI;
+          }
+        } else {
+          for (let i = 0; i < 10; i++) {
+            const angle = i * Math.PI * 2 / 10 + zone * .27, radius = 32 + random() * 17, height = span * (1.1 + random() * .3);
+            const trunk = addBackdrop('giant-trunk', new THREE.CylinderGeometry(.55, 1, 1, 7), '#654b35',
+              new THREE.Vector3(biome.center.x + Math.cos(angle) * radius, biome.start + span * .37, biome.center.z + Math.sin(angle) * radius),
+              new THREE.Vector3(1, height, 1));
+            trunk.rotation.z = (random() - .5) * .26; trunk.rotation.x = (random() - .5) * .18;
+            const branch = addBackdrop('giant-branch', new THREE.CylinderGeometry(.25, .7, 1, 6), '#74583c',
+              trunk.position.clone().add(new THREE.Vector3(Math.cos(angle + .8) * 6, height * .14, Math.sin(angle + .8) * 6)),
+              new THREE.Vector3(.75, height * .34, .75));
+            branch.rotation.z = -.92; branch.rotation.y = angle;
+          }
+        }
+      } else if (biome.kind === 'cloud') {
+        const cloudMaterial = new THREE.MeshStandardMaterial({ color: '#f2f7ff', roughness: 1, flatShading: true, transparent: true, opacity: .72, depthWrite: false });
+        this.ownedMaterials.add(cloudMaterial);
+        const cloudPuffs = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), cloudMaterial, 48);
+        cloudPuffs.name = 'biome-cloud-shelves'; cloudPuffs.castShadow = cloudPuffs.receiveShadow = false; cloudPuffs.frustumCulled = false;
+        for (let i = 0; i < 48; i++) {
+          const angle = i * Math.PI * 2 / 12 + random() * .2, radius = 34 + Math.floor(i / 12) * 10 + random() * 6;
+          dummy.position.set(biome.center.x + Math.cos(angle) * radius, biome.start + span * (.2 + Math.floor(i / 24) * .45) + random() * 4,
+            biome.center.z + Math.sin(angle) * radius);
+          const size = 3.5 + random() * 5; dummy.scale.set(size, 2.5 + random() * 3, size * (.7 + random() * .5));
+          dummy.rotation.set(0, random() * Math.PI, 0); dummy.updateMatrix(); cloudPuffs.setMatrixAt(i, dummy.matrix);
+        }
+        cloudPuffs.instanceMatrix.needsUpdate = true; this.world.add(cloudPuffs); placed += 48;
+      } else if (biome.kind === 'star') {
+        for (let i = 0; i < 9; i++) {
+          const angle = i * Math.PI * 2 / 9, radius = 48 + random() * 24, size = 2 + random() * 3;
+          addBackdrop('floating-meteor', new THREE.IcosahedronGeometry(1, 0), i % 2 ? '#766c69' : '#9b8b76',
+            new THREE.Vector3(biome.center.x + Math.cos(angle) * radius, biome.start + span * (.2 + random() * .65), biome.center.z + Math.sin(angle) * radius),
+            new THREE.Vector3(size, size * (.6 + random()), size * 1.3));
+        }
+      }
+    }
+    return placed;
+  }
+
+  private installStartingWell(course: Course): void {
+    if (course.id !== 'ecosystem-main-v5') return;
+    const radius = 4.3 * WORLD_SCALE, centerZ = course.start.z;
+    const ground = course.landscapes?.find(item => item.zone === 0);
+    const surfaceY = ground ? this.landscapeHeightAt(ground, course.start.x + 5.6 * WORLD_SCALE, course.start.z) : 0;
+    const depth = surfaceY - (course.start.y - .95 * WORLD_SCALE);
+    const wallMaterial = new THREE.MeshStandardMaterial({ color: '#766b5b', roughness: 1, flatShading: true, side: THREE.DoubleSide });
+    this.ownedMaterials.add(wallMaterial);
+    const wall = this.mesh(new THREE.CylinderGeometry(radius, radius, depth, 40, 16, true), wallMaterial, this.world,
+      new THREE.Vector3(course.start.x, surfaceY - depth / 2, centerZ));
+    wall.name = 'starting-well-shaft'; wall.castShadow = false; wall.receiveShadow = false;
+    const stoneMaterial = new THREE.MeshStandardMaterial({ color: '#91836c', roughness: 1, flatShading: true });
+    this.ownedMaterials.add(stoneMaterial);
+    const segments = 28, rows = 18, stones = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), stoneMaterial, segments * rows);
+    stones.name = 'starting-well-stone-lining'; stones.castShadow = false; stones.receiveShadow = false; stones.frustumCulled = false;
+    const stoneColors = ['#a09279', '#8b806e', '#766f61', '#9b8d75', '#837967'].map(color => new THREE.Color(color));
+    const dummy = new THREE.Object3D();
+    for (let row = 0; row < rows; row++) for (let segment = 0; segment < segments; segment++) {
+      const angle = (segment + (row % 2) * .5) * Math.PI * 2 / segments;
+      const y = surfaceY - .98 * WORLD_SCALE - row * (depth - 1.1 * WORLD_SCALE) / (rows - 1);
+      dummy.position.set(course.start.x + Math.cos(angle) * (radius - .04), y, centerZ + Math.sin(angle) * (radius - .04));
+      dummy.rotation.set(0, angle + Math.PI / 2, (segment % 3 - 1) * .012);
+      dummy.scale.set(.52 * WORLD_SCALE, depth / rows * .52, .28 * WORLD_SCALE); dummy.updateMatrix();
+      const index = row * segments + segment;
+      stones.setMatrixAt(index, dummy.matrix); stones.setColorAt(index, stoneColors[(segment * 7 + row * 3) % stoneColors.length]);
+    }
+    stones.instanceMatrix.needsUpdate = true; this.world.add(stones);
+    const mortar = material('#a19378', .98); this.ownedMaterials.add(mortar);
+    for (let y = -4 * WORLD_SCALE; y > -depth; y -= 4.5 * WORLD_SCALE) {
+      const seam = this.mesh(new THREE.TorusGeometry(radius - .06 * WORLD_SCALE, .09 * WORLD_SCALE, 5, 40), mortar, this.world,
+        new THREE.Vector3(course.start.x, surfaceY + y, centerZ));
+      seam.name = 'well-stone-course'; seam.rotation.x = Math.PI / 2; seam.castShadow = seam.receiveShadow = false;
+    }
+    const rimMat = material('#b5a486'); this.ownedMaterials.add(rimMat);
+    const rim = this.mesh(new THREE.TorusGeometry(4.55 * WORLD_SCALE, .42 * WORLD_SCALE, 7, 48), rimMat, this.world,
+      new THREE.Vector3(course.start.x, surfaceY + .08, centerZ));
+    rim.name = 'well-opening-rim'; rim.rotation.x = Math.PI / 2; rim.castShadow = rim.receiveShadow = false;
+    const mossMat = material('#81955b', .98); this.ownedMaterials.add(mossMat);
+    for (let i = 0; i < 8; i++) {
+      const angle = i * Math.PI / 4 + .12;
+      const moss = this.mesh(new THREE.IcosahedronGeometry(1, 0), mossMat, this.world,
+        new THREE.Vector3(course.start.x + Math.cos(angle) * 4.72 * WORLD_SCALE, surfaceY + .17 * WORLD_SCALE, centerZ + Math.sin(angle) * 4.72 * WORLD_SCALE));
+      moss.name = 'well-rim-moss'; moss.scale.set(.48 * WORLD_SCALE, .18 * WORLD_SCALE, .34 * WORLD_SCALE); moss.rotation.y = angle; moss.castShadow = false;
+    }
+    const gate = new THREE.Group();
+    gate.name = 'starting-well-tutorial-gate';
+    gate.position.set(course.start.x, surfaceY + .23, centerZ);
+    const gateWood = material('#8d7654', .92); this.ownedMaterials.add(gateWood);
+    const outer = this.mesh(new THREE.TorusGeometry(9.62, .22, 6, 48), gateWood, gate);
+    outer.rotation.x = Math.PI / 2; outer.castShadow = false;
+    for (let axis = 0; axis < 2; axis++) for (const offset of [-7.5, -5, -2.5, 0, 2.5, 5, 7.5]) {
+      const span = 2 * Math.sqrt(9.35 ** 2 - offset ** 2);
+      const slat = this.mesh(new THREE.BoxGeometry(span, .14, .2), gateWood, gate,
+        new THREE.Vector3(axis === 0 ? 0 : offset, 0, axis === 0 ? offset : 0));
+      if (axis === 1) slat.rotation.y = Math.PI / 2;
+      slat.castShadow = false; slat.receiveShadow = false;
+    }
+    gate.visible = false; this.world.add(gate); this.wellGate = gate;
+  }
+
+  private isWellShaftDecoration(course: Course, position: Vec): boolean {
+    if (course.id !== 'ecosystem-main-v5') return false;
+    const ground = course.landscapes?.find(land => land.zone === 0);
+    if (!ground || position.y >= this.landscapeHeightAt(ground, course.start.x + 5.6 * WORLD_SCALE, course.start.z)
+      || position.y <= course.start.y - 1.2 * WORLD_SCALE) return false;
+    return Math.hypot(position.x - course.start.x, position.z - course.start.z) < 8.3;
   }
 
   private landscapeHeightAt(land: NonNullable<Course['landscapes']>[number], x: number, z: number): number {
@@ -851,8 +1103,96 @@ export class Garden {
     return land.position.y + THREE.MathUtils.lerp(THREE.MathUtils.lerp(h00, h10, fx), THREE.MathUtils.lerp(h01, h11, fx), fz);
   }
 
+  /** Distant low-poly trees and cloud bands keep the full climb framed in a living landscape. */
+  private distantGarden(course: Course): void {
+    const biomes = course.biomes?.length ? course.biomes : [{
+      id: 'meadow', name: '정원', start: 0, end: Math.max(40, course.height), center: { ...course.start },
+      kind: 'grass' as const, foods: ['fly' as const], sky: '#dce8ce', color: '#749d4c',
+    }];
+    const dummy = new THREE.Object3D();
+    for (const [zone, biome] of biomes.entries()) {
+      const random = (() => {
+        let seed = (0x6d2b79f5 ^ Math.imul(zone + 1, 0x45d9f3b)) >>> 0;
+        return () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 0x100000000; };
+      })();
+      const span = Math.max(28, biome.end - biome.start), tiers = [.08, .6];
+      const flower = biome.kind === 'petal' || biome.kind === 'flower';
+      const stone = biome.kind === 'rock' || biome.kind === 'star';
+      const cloud = biome.kind === 'cloud';
+      if (!stone && !cloud) {
+        const count = 30;
+        const trunkMat = material(flower ? '#81724f' : '#735638', .98);
+        const crownMat = material(flower ? new THREE.Color(biome.color).lerp(new THREE.Color('#fff1d2'), .2) : '#6f9853', .94);
+        this.ownedMaterials.add(trunkMat); this.ownedMaterials.add(crownMat);
+        const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(.2, .36, 1, 6), trunkMat, count);
+        const crowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), crownMat, count);
+        trunks.name = `distant-tree-trunks-${biome.id}`; crowns.name = `distant-tree-crowns-${biome.id}`;
+        trunks.castShadow = crowns.castShadow = false; trunks.receiveShadow = crowns.receiveShadow = false;
+        trunks.frustumCulled = crowns.frustumCulled = false;
+        for (let i = 0; i < count; i++) {
+          const tier = Math.floor(i / 15), angle = (i % 15) / 15 * Math.PI * 2 + zone * .57 + (random() - .5) * .16;
+          const radius = (38 + random() * 24) * WORLD_SCALE, x = biome.center.x + Math.cos(angle) * radius, z = biome.center.z + Math.sin(angle) * radius;
+          const height = (flower ? 4 + random() * 2 : 4.5 + random() * 3.2) * WORLD_SCALE;
+          const baseY = biome.start + span * tiers[tier] - 1;
+          dummy.position.set(x, baseY + height * .35, z); dummy.rotation.set(0, random() * Math.PI * 2, 0);
+          const trunk = (flower ? .2 : .3 + random() * .2) * WORLD_SCALE;
+          dummy.scale.set(trunk, height * .7, trunk); dummy.updateMatrix(); trunks.setMatrixAt(i, dummy.matrix);
+          dummy.position.set(x, baseY + height * .78, z);
+          const width = (flower ? 2 + random() * 1.2 : 2.4 + random() * 1.7) * WORLD_SCALE;
+          dummy.scale.set(width, flower ? 1.5 + random() * .7 : 2.1 + random() * 1.2, width * (.8 + random() * .35));
+          dummy.updateMatrix(); crowns.setMatrixAt(i, dummy.matrix);
+          const shade = .86 + random() * .2; crowns.setColorAt(i, new THREE.Color(shade, shade, shade));
+        }
+        trunks.instanceMatrix.needsUpdate = true; crowns.instanceMatrix.needsUpdate = true;
+        if (crowns.instanceColor) crowns.instanceColor.needsUpdate = true;
+        this.world.add(trunks, crowns);
+      }
+
+      const puffCount = cloud ? 24 : 12;
+      const cloudMat = new THREE.MeshStandardMaterial({ color: cloud ? '#f8fbff' : '#fff1df', roughness: 1,
+        transparent: true, opacity: cloud ? .72 : .52, depthWrite: false, flatShading: true });
+      this.ownedMaterials.add(cloudMat);
+      const cloudMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 5), cloudMat, puffCount);
+      cloudMesh.name = `distant-clouds-${biome.id}`; cloudMesh.castShadow = false; cloudMesh.receiveShadow = false; cloudMesh.frustumCulled = false;
+      for (let i = 0; i < puffCount; i++) {
+        const tier = Math.floor(i / Math.max(1, puffCount / 3)), cluster = i % 3;
+        const angle = cluster * Math.PI * 2 / 3 + zone * .41 + (random() - .5) * .24;
+        const radius = (100 + random() * 34) * WORLD_SCALE, width = (2.1 + random() * 2.1) * WORLD_SCALE;
+        dummy.position.set(biome.center.x + Math.cos(angle) * radius + (random() - .5) * 5 * WORLD_SCALE,
+          biome.start + span * tiers[Math.min(1, tier)] + 11 * WORLD_SCALE + (random() - .5) * 4 * WORLD_SCALE,
+          biome.center.z + Math.sin(angle) * radius + (random() - .5) * 5 * WORLD_SCALE);
+        dummy.scale.set(width, (1.3 + random() * 1.1) * WORLD_SCALE, width * .72); dummy.rotation.set(0, random() * Math.PI, 0);
+        dummy.updateMatrix(); cloudMesh.setMatrixAt(i, dummy.matrix);
+      }
+      cloudMesh.instanceMatrix.needsUpdate = true; this.world.add(cloudMesh);
+    }
+  }
+  private pondBackdrop(): void {
+    const waterMaterial = new THREE.MeshPhongMaterial({ color: '#60b7c0', specular: '#c7fbf1', shininess: 85,
+      transparent: true, opacity: .86, depthWrite: false, side: THREE.DoubleSide });
+    const lake = this.mesh(new THREE.CircleGeometry(230, 128), waterMaterial, this.world, new THREE.Vector3(0, -1.2, 0));
+    lake.name = 'wide-pond-surround'; lake.rotation.x = -Math.PI / 2; lake.castShadow = false; lake.receiveShadow = false;
+    const glintMaterial = new THREE.MeshBasicMaterial({ color: '#d7f7dc', transparent: true, opacity: .42, depthWrite: false });
+    const glints = this.mesh(new THREE.TorusGeometry(1, .045, 4, 96), glintMaterial, this.world, new THREE.Vector3(0, -1.16, 0));
+    glints.name = 'pond-water-ripple'; glints.rotation.x = Math.PI / 2; glints.scale.set(70, 46, 1);
+    glints.castShadow = false; glints.receiveShadow = false;
+    let seed = 0x31b72c;
+    const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 0x100000000; };
+    const lilyGeometry = new THREE.CircleGeometry(1, 12, .22, Math.PI * 1.72); lilyGeometry.rotateX(-Math.PI / 2);
+    const lilyMaterial = material('#86a94b', .84); this.ownedMaterials.add(lilyMaterial);
+    const pads = new THREE.InstancedMesh(lilyGeometry, lilyMaterial, 30); pads.name = 'distant-pond-lily-pads';
+    pads.castShadow = false; pads.receiveShadow = false;
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < 30; i++) {
+      const angle = i * 2.399 + random() * .4, radius = 16 + random() * 60, size = .8 + random() * 1.8;
+      dummy.position.set(Math.cos(angle) * radius, -.08 + random() * .025, Math.sin(angle) * radius);
+      dummy.rotation.set(0, random() * Math.PI * 2, 0); dummy.scale.set(size, size, size); dummy.updateMatrix(); pads.setMatrixAt(i, dummy.matrix);
+    }
+    pads.instanceMatrix.needsUpdate = true; this.world.add(pads);
+  }
+
   private installEcosystemAssets(course: Course): number {
-    if (!course.biomes || course.id !== 'ecosystem-main-v3') return 0;
+    if (!course.biomes || !['ecosystem-main-v3', 'ecosystem-main-v4', 'ecosystem-main-v5'].includes(course.id)) return 0;
     const land = course.landscapes?.find(item => item.zone === 0);
     const pads = new Map(course.platforms.map(platform => [platform.id, platform]));
     const atGround = (x: number, z: number) => land ? this.landscapeHeightAt(land, x, z) : 0;
@@ -875,11 +1215,6 @@ export class Garden {
       place('pond-reed', { x: -11, y: atGround(-11, -1.2), z: -1.2 }, 3.3, .28);
       place('pond-stones', { x: -10.5, y: atGround(-10.5, -7), z: -7 }, 3.4, -.42);
       place('pond-root-bridge', { x: -1.8, y: atGround(-1.8, 1.8), z: 1.8 }, 5.1, -.3);
-      const grass = [
-        ['meadow-grass-a', -11, 5], ['meadow-grass-b', 10.5, -10],
-        ['meadow-grass-c', 10.2, 8.5], ['meadow-grass-a', -3.6, -11],
-      ] as const;
-      for (const [asset, x, z] of grass) place(asset, { x, y: atGround(x, z), z }, 1.9, x * .17 + z * .11);
     }
 
     const firstLeaf = atPad('pad-1');
@@ -889,7 +1224,7 @@ export class Garden {
     place('meadow-boulders', atPad('basin-rocks', 1.05, 3.2), 3.5, .32);
 
     // One large flower grows above the authored crown as its central landmark.
-    place('meadow-flower', { x: 47, y: 82.7, z: -31 }, 4.6, .15);
+    place('meadow-flower', { x: 47, y: course.id === 'ecosystem-main-v5' ? 82.7 * 3.5 : 82.7, z: -31 }, 4.6, .15);
     place('upper-branch', atPad('pad-18'), 6.2, .14);
     place('upper-ridge', atPad('pad-24'), 6.5, -.18);
     place('upper-clouds', atPad('pad-29'), 7.1, .12);
@@ -899,6 +1234,8 @@ export class Garden {
 
   async load(course: Course): Promise<void> {
     const loadVersion = ++this.modelLoadVersion;
+    this.camera.far = Math.max(330, course.height + 130);
+    this.camera.updateProjectionMatrix();
     this.canvas.dataset.assetState = 'loading';
     this.canvas.dataset.course=course.id;
     this.clearCameraFades();
@@ -918,13 +1255,15 @@ export class Garden {
     this.stars = null;
     if (course.biomes) {
       const points: number[] = [];
-      for (let i = 0; i < 180; i++) points.push(Math.sin(i * 18.7) * 80, 148 + i % 43 * 1.5, Math.cos(i * 7.3) * 80);
+      const starHeightScale = course.id === 'ecosystem-main-v5' ? 3.5 : 1;
+      for (let i = 0; i < 180; i++) points.push(Math.sin(i * 18.7) * 80, (148 + i % 43 * 1.5) * starHeightScale, Math.cos(i * 7.3) * 80);
       const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
       const mat = new THREE.PointsMaterial({ color: '#fff3cf', size: .16, transparent: true, opacity: .9 });
       this.ownedMaterials.add(mat);
       this.stars = new THREE.Points(geometry, mat); this.world.add(this.stars);
     }
     for (const p of course.platforms) this.platform(p, !!course.biomes);
+    this.installStartingWell(course);
     const terrainAccents = ['#9aac66', '#abc276', '#b2a78e', '#b77986', '#aa9b68', '#778794', '#f7f8fc', '#85754c'];
     for (const land of course.landscapes ?? []) {
       const data = landscapeMesh(land), geometry = new THREE.BufferGeometry();
@@ -947,15 +1286,19 @@ export class Garden {
       this.collisionMeshes.push(surface);
       this.grassOnLandscape(this.world, land, course);
       this.floraOnLandscape(this.world, land, course);
+      this.flowersOnIsland(this.world, land, course);
     }
+    if (course.mode === 'main' && course.landscapes?.some(land => land.zone === 0)) this.pondBackdrop();
     for (const a of course.anchors) this.makeFly(a);
     for (const rock of course.rocks ?? []) {
+      if (this.isWellShaftDecoration(course, rock.position)) continue;
       const stone = this.mesh(new THREE.IcosahedronGeometry(1, 0), material('#9a9c87'), this.world, V(rock.position));
       stone.scale.copy(V(rock.size)); this.collisionMeshes.push(stone);
     }
     for (const solid of course.solids ?? []) {
+      if (this.isWellShaftDecoration(course, solid.position)) continue;
       const m = this.mesh(new THREE.CylinderGeometry(solid.radius, solid.radius, solid.height, 16),
-        solid.kind === 'trunk' ? this.mats.bark : material(solid.kind === 'grass' ? '#648d3c' : '#71954a'), this.world, V(solid.position));
+        solid.kind === 'trunk' ? this.mats.bark : material(solid.kind === 'rock' ? '#756f63' : solid.kind === 'grass' ? '#648d3c' : '#71954a'), this.world, V(solid.position));
       if (solid.direction) m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), V(solid.direction).normalize());
       this.collisionMeshes.push(m);
     }
@@ -992,12 +1335,12 @@ export class Garden {
         leaf.scale.set(2.5, .28, 1.7); leaf.rotation.set(.18, angle, -.18);
       }
     }
-    this.sceneReady = false; this.yaw = .52; this.renderedYaw = .52; this.pitch = course.mode === 'main' ? .18 : .36; this.distance = course.route ? 12 : 8;
+    this.sceneReady = false; this.yaw = .52; this.renderedYaw = .52; this.pitch = .36; this.distance = course.route ? 12 : 8;
     this.landing = -1; this.missUntil = 0;
     this.hopPhase = 0; this.lastAnimationTime = 0;
     await this.modelAssetsReady;
     if (loadVersion !== this.modelLoadVersion) return;
-    const sceneryInstalled = this.installEcosystemAssets(course);
+    const sceneryInstalled = this.installEcosystemAssets(course) + this.installPanorama(course);
     this.canvas.dataset.frogAsset = 'procedural';
     this.canvas.dataset.proceduralFrogVisible = String(this.frogBody.visible);
     this.canvas.dataset.foodAssets = '0';
@@ -1027,7 +1370,42 @@ export class Garden {
     }
   }
 
+  private updateSlimeDrops(sim: Simulation, p: THREE.Vector3, velocity: THREE.Vector3, mouth: THREE.Vector3,
+    speed: number, dt: number, now: number): void {
+    if (sim.attached && now >= this.nextSlimeDrop) {
+      const index = this.slimeDropCursor++;
+      const drop = this.slimeDrops[index % this.slimeDrops.length];
+      if (index % 3 === 0) {
+        const anchor = V(sim.anchorPosition(sim.attached)!);
+        const t = .22 + ((index * 37) % 57) / 100;
+        drop.mesh.position.lerpVectors(mouth, anchor, t);
+        drop.mesh.position.y -= .035;
+      } else {
+        const side = index % 2 ? 1 : -1;
+        drop.mesh.position.copy(this.frogBody.localToWorld(new THREE.Vector3(side * (.15 + (index % 3) * .055), -.22, -.16)));
+      }
+      drop.velocity.set(-velocity.x * .035 + Math.sin(index * 2.3) * .28,
+        -.42 - Math.min(.55, speed * .018), -velocity.z * .035 + Math.cos(index * 1.7) * .28);
+      drop.maxLife = .48 + (index % 4) * .09;
+      drop.life = drop.maxLife;
+      const size = .042 + Math.min(.025, speed * .0012);
+      drop.mesh.scale.set(size, size * (1.1 + index % 3 * .22), size);
+      drop.mesh.visible = true;
+      this.nextSlimeDrop = now + Math.max(.17, .34 - Math.min(.14, speed * .006));
+    }
+    for (const drop of this.slimeDrops) {
+      if (drop.life <= 0) continue;
+      drop.life = Math.max(0, drop.life - dt);
+      drop.velocity.y -= 2.2 * dt;
+      drop.mesh.position.addScaledVector(drop.velocity, dt);
+      const fade = clamp(drop.life / drop.maxLife, 0, 1);
+      drop.mesh.scale.multiplyScalar(.985 + fade * .015);
+      if (!drop.life || drop.mesh.position.y < p.y - 2.3) drop.mesh.visible = false;
+    }
+  }
+
   update(sim: Simulation, target: Anchor | null, dt: number, now: number, motion: boolean): void {
+    if (this.wellGate) this.wellGate.visible = sim.wellLocked;
     const p = V(sim.position), v = V(sim.velocity), speed = v.length();
     const sky = this.skyColors[sim.zone];
     if (sky) {
@@ -1057,13 +1435,16 @@ export class Garden {
       bubbles.forEach((bubble, i) => bubble.position.set(Math.sin(i * 2.4) * volume.radius * .38,
         (((now * .25 + i / 6) % 1) - .5) * volume.radius * 1.6, Math.cos(i * 2.4) * volume.radius * .38));
     }
-    const swingState = sim.impulse;
-    const eatSwing = swingState?.kind === 'eat-swing';
-    const swingProgress = swingState ? clamp(1 - swingState.remaining / swingState.duration, 0, 1) : 0;
+    const launchState = sim.dash?.kind === 'launch' ? sim.dash : undefined;
+    const swingState = launchState ? { remaining: launchState.remaining, duration: launchState.duration ?? .3,
+      direction: launchState.direction, kind: 'eat-swing' as const } : undefined;
+    const feedbackState = swingState ?? sim.impulse;
+    const eatSwing = !!launchState || swingState?.kind === 'eat-swing';
+    const swingProgress = feedbackState ? clamp(1 - feedbackState.remaining / feedbackState.duration, 0, 1) : 0;
     const recoilStroke = eatSwing ? Math.sin(clamp(swingProgress / .72, 0, 1) * Math.PI) : 0;
     this.swingBurst.visible = !!eatSwing && swingProgress < .92;
-    if (eatSwing && swingState) {
-      const direction = V(swingState.direction);
+    if (eatSwing && feedbackState) {
+      const direction = V(feedbackState!.direction);
       const right = new THREE.Vector3().crossVectors(direction, Math.abs(direction.y) > .96 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)).normalize();
       this.mats.swing.opacity = (1 - swingProgress) * .78;
       this.mats.swing.color.set('#f7eab2');
@@ -1095,7 +1476,7 @@ export class Garden {
     const tilt = sim.grounded ? 0 : clamp(speed / 18, 0, .55);
     this.frogBody.rotation.x = THREE.MathUtils.lerp(this.frogBody.rotation.x, sim.attached ? -.25 : water ? -.08 - Math.min(.3, speed * .04) : eatSwing && swingState ? -Math.asin(clamp(swingState.direction.y, -1, 1)) * .48 : v.y > 0 ? -.15 - tilt : .1 + tilt * .45, Math.min(1, dt * 9));
     this.frogBody.rotation.z = motion && !sim.grounded ? Math.sin(now * 2.3) * Math.min(.22, speed * .012)
-      + (eatSwing ? (swingState?.direction.x ?? 0) * recoilStroke * .12 : 0) : 0;
+      + (eatSwing ? (feedbackState?.direction.x ?? 0) * recoilStroke * .12 : 0) : 0;
     const bounce = Math.max(0, 1 - (now - this.landing) / .26) * this.squash;
     this.frogBody.scale.set(1 + bounce * .15 + gulp * .08 + recoilStroke * .08,
       1 - bounce * .25 + gulp * .06 - recoilStroke * .12,
@@ -1190,35 +1571,52 @@ export class Garden {
     if (sim.anchor) {
       this.lastTongueEnd.copy(V(sim.anchor.position));
       this.tongue.update(mouth, this.lastTongueEnd, Math.min(1.2, Math.max(0, sim.ropeLength - mouth.distanceTo(this.lastTongueEnd)) * .5));
+      const slimeEnd = this.lastTongueEnd.clone();
+      const toward = slimeEnd.clone().sub(mouth).normalize();
+      const side = new THREE.Vector3().crossVectors(toward, new THREE.Vector3(0, 1, 0)).normalize();
+      this.slimeTongue.update(mouth.clone().addScaledVector(side, .045).add(new THREE.Vector3(0, -.025, 0)),
+        slimeEnd.addScaledVector(side, .045), Math.min(1.24, Math.max(0, sim.ropeLength - mouth.distanceTo(slimeEnd)) * .5));
     } else if (pulling) {
       const fly = this.flies.get(pulling.anchor.id)!;
       this.tongue.update(mouth, fly.position, .1 * Math.sin(pulling.life.elapsed / FLY_TIMING.retract * Math.PI), Math.max(.15, fly.scale.x));
-    } else if (now < this.missUntil) this.tongue.update(mouth, new THREE.Vector3().lerpVectors(mouth, this.lastTongueEnd, Math.max(0, (this.missUntil - now) / .14)), 0);
-    else this.tongue.mesh.visible = false;
+      this.slimeTongue.update(mouth.clone().add(new THREE.Vector3(.045, -.025, 0)), fly.position.clone().add(new THREE.Vector3(.045, 0, 0)), .1 * Math.sin(pulling.life.elapsed / FLY_TIMING.retract * Math.PI), Math.max(.15, fly.scale.x));
+    } else {
+      this.slimeTongue.mesh.visible = false;
+      if (now < this.missUntil) this.tongue.update(mouth, new THREE.Vector3().lerpVectors(mouth, this.lastTongueEnd, Math.max(0, (this.missUntil - now) / .14)), 0);
+      else this.tongue.mesh.visible = false;
+    }
+    this.updateSlimeDrops(sim, p, v, mouth, speed, dt, now);
     this.targetRing.visible = !!target && target.id !== sim.attached;
     if (target) { this.targetRing.position.copy(V(target.position)); this.targetRing.quaternion.copy(this.camera.quaternion); }
     this.attachedRing.visible = !!sim.anchor;
     if (sim.anchor) { this.attachedRing.position.copy(V(sim.anchor.position)); this.attachedRing.quaternion.copy(this.camera.quaternion); }
     const authored = !!sim.course.route;
-    const goalFocus = p.clone().add(new THREE.Vector3(0, authored ? 2.7 : 1.2, 0));
-    if (sim.anchor) goalFocus.lerp(V(sim.anchor.position), .18);
-    // Let speed gently lead the camera while keeping the same follow behavior
-    // for normal movement and food swings.
-    const cameraLead = v.clone().multiplyScalar(.055 + Math.min(.035, speed * .001));
-    cameraLead.x = clamp(cameraLead.x, -.85, .85);
-    cameraLead.z = clamp(cameraLead.z, -.85, .85);
-    cameraLead.y = clamp(cameraLead.y, -.8, 1.35);
+    const wellLandscape = sim.course.id === 'ecosystem-main-v5'
+      ? sim.course.landscapes?.find(item => item.zone === 0)
+      : undefined;
+    const wellSurfaceY = wellLandscape
+      ? this.landscapeHeightAt(wellLandscape, sim.course.start.x + 5.6 * WORLD_SCALE, sim.course.start.z)
+      : 0;
+    const inStartingWell = !!wellLandscape && !sim.wellLocked && p.y < wellSurfaceY + 1.5 * WORLD_SCALE;
+    const goalFocus = p.clone().add(new THREE.Vector3(0, inStartingWell ? 1.25 * WORLD_SCALE : authored ? 1.9 : 1.05, 0));
+    if (sim.anchor) goalFocus.lerp(V(sim.anchor.position), .1);
+    // Keep the player near screen center during a swing. A small lead preserves
+    // direction cues without letting fast input drag the framing across the view.
+    const cameraLead = v.clone().multiplyScalar(sim.anchor ? .022 : .038);
+    cameraLead.x = clamp(cameraLead.x, -.42, .42);
+    cameraLead.z = clamp(cameraLead.z, -.42, .42);
+    cameraLead.y = clamp(cameraLead.y, -.32, .62);
     goalFocus.add(cameraLead);
     if (!this.sceneReady) { this.focus.copy(goalFocus); this.sceneReady = true; }
-    else this.focus.lerp(goalFocus, 1 - Math.exp(-dt * (8 + Math.min(10, speed * .3))));
-    const wanted = (sim.anchor ? clamp(sim.ropeLength * .8 + (authored ? 7 : 4), authored ? 11 : 7, authored ? 15 : 12) : authored ? 12 : 8)
-      + Math.min(1.1, speed * .045);
-    this.distance = THREE.MathUtils.lerp(this.distance, wanted, 1 - Math.exp(-dt * 4));
+    else this.focus.lerp(goalFocus, 1 - Math.exp(-dt * (sim.anchor ? 5.2 : 5.8)));
+    const wanted = (inStartingWell ? 3.25 * WORLD_SCALE : sim.anchor ? clamp(sim.ropeLength * .62 + (authored ? 5.2 : 3.4), authored ? 9.5 : 7.5, authored ? 12.5 : 10.5) : authored ? 10.5 : 8)
+      + Math.min(.45, speed * .018);
+    this.distance = THREE.MathUtils.lerp(this.distance, wanted, 1 - Math.exp(-dt * 2.8));
     const drift = motion && !sim.attached ? Math.sin(now * .42) * .026 : 0;
     // Keep biome transitions from rotating the view underneath camera-relative WASD.
     const yaw = this.yaw + drift;
     this.renderedYaw = yaw;
-    const pitch = this.pitch + (motion && !sim.attached ? Math.sin(now * .31 + 1.4) * .009 : 0);
+    const pitch = this.pitch + (inStartingWell ? .42 : 0) + (motion && !sim.attached ? Math.sin(now * .31 + 1.4) * .009 : 0);
     const offset = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(this.distance);
     const direction = offset.clone().normalize();
     const cameraRight = new THREE.Vector3().crossVectors(direction, new THREE.Vector3(0, 1, 0)).normalize();
@@ -1235,18 +1633,33 @@ export class Garden {
       if (hit) nearestBlocker = Math.min(nearestBlocker, hit.distance);
     }
     if (nearestBlocker < offset.length()) offset.setLength(Math.max(.35, nearestBlocker - .5));
-    this.camera.position.copy(this.focus).add(offset); this.camera.lookAt(this.focus);
+    this.camera.position.copy(this.focus).add(offset);
+    if (inStartingWell) {
+      // Keep the viewpoint inside the shaft until the frog has cleared its rim.
+      // The radial limit leaves a small gap from the inner stone lining.
+      const dx = this.camera.position.x - sim.course.start.x;
+      const dz = this.camera.position.z - sim.course.start.z;
+      const radialDistance = Math.hypot(dx, dz);
+      const safeRadius = 3.35 * WORLD_SCALE;
+      if (radialDistance > safeRadius) {
+        const scale = safeRadius / radialDistance;
+        this.camera.position.x = sim.course.start.x + dx * scale;
+        this.camera.position.z = sim.course.start.z + dz * scale;
+      }
+      this.camera.position.y = clamp(this.camera.position.y, sim.course.start.y - .4 * WORLD_SCALE, wellSurfaceY - .45 * WORLD_SCALE);
+    }
+    this.camera.lookAt(this.focus);
     this.fadeCameraOccluders();
     const speedFactor = clamp((speed - 3) / 22, 0, 1);
-    const wantedFov = 60 + speedFactor * 5.5 + (sim.attached && horizontalSpeed > 5 ? 1.5 : 0);
-    this.cameraFov = THREE.MathUtils.lerp(this.cameraFov, wantedFov, 1 - Math.exp(-dt * 3.5));
+    const wantedFov = 60 + speedFactor * 3.5 + (sim.attached && horizontalSpeed > 5 ? .6 : 0);
+    this.cameraFov = THREE.MathUtils.lerp(this.cameraFov, wantedFov, 1 - Math.exp(-dt * 2.6));
     if (Math.abs(this.camera.fov - this.cameraFov) > .05) {
       this.camera.fov = this.cameraFov;
       this.camera.updateProjectionMatrix();
     }
     const lateralSpeed = v.x * Math.cos(yaw) - v.z * Math.sin(yaw);
-    const wantedBank = motion ? clamp(-lateralSpeed * .0028, -.075, .075) : 0;
-    this.cameraBank = THREE.MathUtils.lerp(this.cameraBank, wantedBank, 1 - Math.exp(-dt * 4.5));
+    const wantedBank = motion ? clamp(-lateralSpeed * .0014, -.035, .035) : 0;
+    this.cameraBank = THREE.MathUtils.lerp(this.cameraBank, wantedBank, 1 - Math.exp(-dt * 3.2));
     this.camera.rotateZ(this.cameraBank);
     this.canvas.dataset.cameraYaw = yaw.toFixed(4);
     this.canvas.dataset.cameraPitch = this.pitch.toFixed(4);
@@ -1258,6 +1671,9 @@ export class Garden {
     this.canvas.dataset.attachedFlyY = attachedFly?.position.y.toFixed(4) ?? '';
     this.canvas.dataset.attachedFlyZ = attachedFly?.position.z.toFixed(4) ?? '';
     this.sun.target.position.copy(p); this.sun.position.copy(p).add(new THREE.Vector3(20, 30, 16)); this.sun.target.updateMatrixWorld();
+    this.sunDisc.visible = sim.zone !== 7;
+    this.sunDisc.position.copy(p).add(new THREE.Vector3(24, 20, -80));
+    this.sunDisc.material.opacity = sim.zone >= 6 && sim.zone !== 7 ? .72 : .9;
     this.renderer.render(this.scene, this.camera);
   }
 }

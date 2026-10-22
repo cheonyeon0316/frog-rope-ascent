@@ -32,17 +32,14 @@ try {
   const before = await get(); await shot('tethered-swing');
   await page.keyboard.press('Space');
   await page.waitForFunction(() => document.querySelector('#ui').dataset.swingKind === 'eat-swing', null, { timeout: 1200 });
+  const launch = await get(); await shot('eat-swing-target-dash');
+  assert.equal(launch.attached, '', 'eating the fly should release the tongue');
+  await page.waitForFunction(() => !document.querySelector('#ui').dataset.swingKind, null, { timeout: 2500 });
   const after = await get();
-  assert.equal(after.attached, '');
-  assert.ok(Math.hypot(after.v.x, after.v.y, after.v.z) > Math.hypot(before.v.x, before.v.y, before.v.z));
-  await shot('eat-swing-release');
-  await page.waitForFunction(() => !document.querySelector('#ui').dataset.swingKind, null, { timeout: 1200 });
-  const coast = await get();
-  assert.ok(Math.hypot(coast.v.x, coast.v.y, coast.v.z) > 1, 'momentum should continue after the short impulse ends');
-  assert.ok(coast.v.y < after.v.y, 'normal gravity should continue after release');
-  assert.equal((await page.locator('#toast').innerText()).includes('먹기 스윙'), true);
-  await shot('gravity-coast');
-  results.push({ check: 'Space consumes attached food, applies one short swing kick, then normal gravity continues', before, after, coast });
+  assert.ok(after.height > before.height + .5, 'target dash should carry the frog toward the fly position');
+  assert.ok(Math.hypot(after.v.x, after.v.y, after.v.z) > 1, 'momentum should continue after arrival');
+  await shot('eat-dash-arrival-coast');
+  results.push({ check: 'Space consumes the attached fly and follows a shallow arcing dash to its position, then preserves arrival momentum', before, launch, after });
 
   await page.keyboard.press('Escape');
   assert.equal((await get()).state, 'paused');
@@ -51,7 +48,17 @@ try {
   await page.locator('#start').click();
   await page.waitForFunction(() => document.querySelector('#ui').dataset.mode === 'main' && document.querySelector('#ui').dataset.state === 'playing', null, { timeout: 5000 });
   await page.waitForTimeout(600); await shot('ecosystem-first-zone');
-  results.push({ check: 'main ecosystem loads with revised route', state: await get() });
+  assert.equal(await page.locator('#world').getAttribute('data-course'), 'ecosystem-main-v5');
+  const metrics = await page.evaluate(async () => {
+    const { makeCourse } = await import('/src/game/course.ts');
+    const course = makeCourse('main');
+    const holeRadius = course.landscapes?.find(land => land.zone === 0)?.hole?.radius;
+    return { height: course.height, routeBeats: course.route?.length, bridgePads: course.platforms.filter(p => p.id.startsWith('bridge-')).length,
+      landHoleRadius: holeRadius, wellOpeningRadius: holeRadius ? holeRadius * .86 : undefined };
+  });
+  assert.equal(metrics.height, 1540); assert.equal(metrics.routeBeats, 221); assert.equal(metrics.bridgePads, 174);
+  assert.equal(metrics.landHoleRadius, 10); assert.equal(metrics.wellOpeningRadius, 8.6);
+  results.push({ check: 'expanded 1540m course loads with 221 route beats', course: await page.locator('#world').getAttribute('data-course'), metrics, state: await get() });
 
   await page.evaluate(async () => {
     const { makeCourse } = await import('/src/game/course.ts');

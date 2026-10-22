@@ -15,6 +15,15 @@ function fixture(): Course {
 }
 
 describe('actual Rapier rope physics', () => {
+  it('keeps the frog inside the starting well when it pushes against the shaft wall', () => {
+    const s = new Simulation(makeCourse('main'));
+    s.body.setTranslation(vec(0, -10, 3.5), true);
+    s.body.setLinvel(vec(22, 0, 0), true);
+    for (let i = 0; i < 60; i++) s.step(idle, null);
+    expect(Math.hypot(s.position.x, s.position.z - 7)).toBeLessThan(8.6);
+    expect(s.position.y).toBeLessThan(0);
+    s.dispose();
+  });
   it('preserves upward and downward velocity when terrain cuts the rope', () => {
     for (const y of [6, -6]) {
       const s = new Simulation(fixture());
@@ -144,9 +153,9 @@ describe('eating and fly regeneration', () => {
 });
 
 describe('course and progress contracts', () => {
-  it('offers a real 180m course and a separate 12m training course', () => {
+  it('offers a real 1540m course and a separate 12m training course', () => {
     const main = makeCourse('main'), training = makeCourse('training');
-    expect(main.height).toBe(180); expect(training.height).toBe(12);
+    expect(main.height).toBe(1540); expect(training.height).toBe(12);
     expect(new Set(main.anchors.map(a => a.id)).size).toBe(main.anchors.length);
     expect(main.anchors.some(a => a.recovery)).toBe(true);
     expect(main.platforms.some(p => p.recovery)).toBe(true);
@@ -155,13 +164,17 @@ describe('course and progress contracts', () => {
     const practice = new Simulation(makeCourse('training'));
     expect(practice.attach('fly-0')).toBe(true); practice.dispose();
     const main = new Simulation(makeCourse('main'));
-    let previous = main.course.start;
-    for (let i = 1; i <= 36; i++) {
-      main.body.setTranslation(previous, true);
-      const food = i === 1 ? 'fly-1-a' : main.course.route![i-2].launch;
-      expect(main.attach(food), `safe route ${i}`).toBe(true); main.release();
-      const platform = i === 36 ? main.course.summit : main.course.platforms.find(p => p.id === `pad-${i}`)!;
-      previous = vec(platform.position.x, platform.position.y + platform.size.y / 2 + .4, platform.position.z);
+    const route = main.course.route!;
+    for (let i = 0; i < route.length - 1; i++) {
+      const platform = main.course.platforms.find(p => p.id === route[i].platform)!;
+      const stand = i === 0 ? main.course.start : vec(platform.position.x, platform.position.y + platform.size.y / 2 + .4, platform.position.z);
+      main.body.setTranslation(stand, true);
+      const food = route[i].launch;
+      const anchor=main.course.anchors.find(a=>a.id===food)!;
+      const d=distance(stand,anchor.position),dir=vec((anchor.position.x-stand.x)/d,(anchor.position.y-stand.y)/d,(anchor.position.z-stand.z)/d);
+      const hit=main.world.castRay(new RAPIER.Ray(stand,dir),d-.04,true,RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,undefined,main.collider,main.body);
+      const nearby=main.course.platforms.filter(p=>Math.hypot(p.position.x-stand.x,p.position.z-stand.z)<18&&Math.abs(p.position.y-stand.y)<8).map(p=>p.id);
+      expect(main.attach(food), `safe route ${i} platform=${route[i].platform} stand=${JSON.stringify(stand)} food=${JSON.stringify(anchor.position)} blocked=${main.blocked(stand,anchor.position)} hit=${JSON.stringify(hit?.collider.translation())} nearby=${nearby.join(',')}`).toBe(true); main.release();
     }
     main.dispose();
   });

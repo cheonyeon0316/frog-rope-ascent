@@ -1,0 +1,41 @@
+{
+  "results": [
+    {
+      "check": "ordinary tongue release keeps its shorter directional nudge and then coasts under gravity",
+      "caught": {
+        "attached": "fly-0",
+        "state": "playing",
+        "height": 0,
+        "swing": "",
+        "v": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "nudged": {
+        "attached": "",
+        "state": "playing",
+        "height": 0,
+        "swing": "release",
+        "v": {
+          "x": 0.636,
+          "y": 3.117,
+          "z": -0.397
+        }
+      },
+      "coast": {
+        "attached": "",
+        "state": "playing",
+        "height": 0.06,
+        "swing": "",
+        "v": {
+          "x": 0.627,
+          "y": -2.735,
+          "z": -0.392
+        }
+      }
+    }
+  ],
+  "errors": []
+}

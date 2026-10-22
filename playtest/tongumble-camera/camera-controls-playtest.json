@@ -3,9 +3,9 @@
   "course": "ecosystem-main-v3",
   "sample": {
     "cameraYaw": 0.4955,
-    "movementYaw": 0.4954,
+    "movementYaw": 0.4955,
     "inputX": -0.4754,
-    "inputZ": -0.8798
+    "inputZ": -0.8797
   },
   "errors": []
 }

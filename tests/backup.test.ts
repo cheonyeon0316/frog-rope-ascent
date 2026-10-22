@@ -24,5 +24,5 @@ it('rejects corrupt, foreign, oversized and unsupported backup files', () => {
 });
 it('rejects invalid settings and unsafe save positions without repairing them silently', () => {
   const b = fixture(); b.settings.volume = -1; expect(() => parseBackup(JSON.stringify(b))).toThrow();
-  b.settings.volume = .5; b.current!.position.x = 100; expect(() => parseBackup(JSON.stringify(b))).toThrow();
+  b.settings.volume = .5; b.current!.position.x = 200; expect(() => parseBackup(JSON.stringify(b))).toThrow();
 });

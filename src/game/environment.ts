@@ -102,6 +102,9 @@ export function landscapeMesh(land: Landscape) {
       nz * land.size.z / 2 * (land.round ? Math.sqrt(1 - nx * nx / 2) * organicEdge : 1));
   }
   for (let x = 0; x < n; x++) for (let z = 0; z < n; z++) {
+    const cellX = ((x + .5) / n - .5) * land.size.x;
+    const cellZ = ((z + .5) / n - .5) * land.size.z;
+    if (land.hole && Math.hypot(cellX - land.hole.x, cellZ - land.hole.z) < land.hole.radius) continue;
     const a = x * (n + 1) + z, b = a + n + 1, c = a + 1, d = b + 1;
     indices.push(a, c, b, b, c, d);
   }

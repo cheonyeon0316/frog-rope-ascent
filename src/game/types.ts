@@ -7,8 +7,8 @@ export type Landform = 'leaf' | 'petal' | 'stone' | 'branch' | 'root' | 'cloud';
 export interface Platform { id: string; position: Vec; size: Vec; zone: number; kind: 'leaf' | 'pot' | 'wood' | 'metal' | 'flower' | 'ground' | 'terrace' | 'grass' | 'rock' | 'petal' | 'branch' | 'cloud' | 'star'; recovery?: boolean; bounce?: number; refuge?: string; round?: boolean; form?: Landform; rotation?: Vec; bend?: number; color?: string }
 export interface CourseBeat { platform: string; launch: string; arrival?: string; name: string; zone: number }
 export interface Biome { id: string; name: string; start: number; end: number; center: Vec; kind: Platform['kind']; foods: Food[]; sky: string; color: string }
-export interface Solid { position: Vec; radius: number; height: number; kind: 'trunk' | 'stem' | 'grass'; direction?: Vec }
-export interface Landscape { position: Vec; size: Vec; resolution: number; heights: number[]; zone: number; round?: boolean }
+export interface Solid { position: Vec; radius: number; height: number; kind: 'trunk' | 'stem' | 'grass' | 'rock'; direction?: Vec }
+export interface Landscape { position: Vec; size: Vec; resolution: number; heights: number[]; zone: number; round?: boolean; hole?: { x: number; z: number; radius: number } }
 export interface WaterVolume { id: string; position: Vec; radius: number }
 export interface Rock { position: Vec; size: Vec }
 export interface Course { id: string; mode: Mode; height: number; start: Vec; anchors: Anchor[]; platforms: Platform[]; summit: Platform; waters?: WaterVolume[]; rocks?: Rock[]; biomes?: Biome[]; solids?: Solid[]; landscapes?: Landscape[]; bounds?: number; route?: CourseBeat[] }

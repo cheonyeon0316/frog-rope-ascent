@@ -1,7 +1,7 @@
 import { vec, type Course, type Platform, type Anchor, type Biome, type Vec, type Landform } from './types';
 import { makeRocks } from './environment';
 
-export const ECOSYSTEM_ID = 'ecosystem-main-v3';
+export const ECOSYSTEM_ID = 'ecosystem-main-v4';
 
 type Placement = [name: string, zone: number, x: number, top: number, z: number, form: Landform, width: number, thickness: number, length: number, yaw: number, bend?: number];
 export const ROUTE_PLACEMENTS: Placement[] = [
@@ -40,6 +40,16 @@ export const ROUTE_PLACEMENTS: Placement[] = [
   ['첫 운석 바위',7,-12,165.5,-7,'stone',5.5,2.2,6,.4],
   ['별자리 왼쪽 운석',7,-7,170.2,-3,'stone',5,2,5,-.5],
   ['정상 아래 노출된 운석',7,-11,175.4,2,'stone',5.4,2,5.6,.3],
+  ['매달린 뿌리의 문',8,-16,180.7,8,'root',7,.9,6,.35,.9],
+  ['뿌리 미궁 안쪽 턱',8,-21,184.6,13,'branch',6.5,1.1,7,-.65],
+  ['매듭 위의 둥근 잎',8,-15,188.6,18,'leaf',6.5,.45,6,.55,.9],
+  ['안개 협곡을 건너는 뿌리',8,-8,192.6,14,'root',8,.85,8,-.15,1.1],
+  ['미궁 끝 가지 쉼터',8,-13,196.6,7,'branch',6.5,1.2,6,.9],
+  ['새벽 꽃섬 입구',9,-7,200.6,13,'petal',7.5,.55,8,.35,1.15],
+  ['나선 안쪽 꽃잎',9,-3,204.6,18,'petal',7.4,.55,8,-.7,1.35],
+  ['이슬 고리의 수술잎',9,4,208.6,16,'leaf',6.4,.45,7,.85,.75],
+  ['꽃바깥으로 열린 잎',9,9,212.6,22,'leaf',6.5,.5,7,-.5,1.05],
+  ['새벽빛 운석',9,8,216.6,31,'stone',5.8,2,5.8,.2],
 ];
 
 export function makeEcosystem(): Course {
@@ -52,6 +62,8 @@ export function makeEcosystem(): Course {
     { id:'mountain',name:'바위산 능선',start:120,end:145,center:vec(0,120,-34),kind:'rock',foods:['beetle','moth'],sky:'#c6d6e4',color:'#7c8e9e' },
     { id:'clouds',name:'구름 바다',start:145,end:165,center:vec(-16,145,-20),kind:'cloud',foods:['dew'],sky:'#9dbfe0',color:'#e5edf8' },
     { id:'stars',name:'별의 길',start:165,end:180,center:vec(-10,165,0),kind:'star',foods:['stardust'],sky:'#192846',color:'#dfc584' },
+    { id:'roots',name:'뿌리의 안개 미궁',start:180,end:200,center:vec(-16,180,14),kind:'branch',foods:['moth','dew'],sky:'#a5c9c2',color:'#7c9c77' },
+    { id:'dawn',name:'새벽 꽃섬',start:200,end:220,center:vec(1,200,21),kind:'petal',foods:['pollen','stardust'],sky:'#f5c8a6',color:'#e8a0a2' },
   ];
   const start = vec(0,.95,3.5);
   const platforms: Platform[] = [{id:'ground',position:vec(0,-.3,0),size:vec(28,.6,28),kind:'ground',zone:0,round:true}];
@@ -69,6 +81,7 @@ export function makeEcosystem(): Course {
   const recovery: [Landform,number,number,number,string][] = [
     ['root',15,2,12,'#728144'],['stone',16,4,12,'#8a8c70'],['petal',16,.8,13,'#6f964c'],
     ['branch',16,2,13,'#876747'],['stone',16,3,11,'#78838b'],['cloud',16,3,13,'#e8f1f7'],['stone',13,3,11,'#666c86'],
+    ['root',16,2.2,12,'#7b8c70'],['petal',16,.75,12,'#e9a6a7'],
   ];
   for (let zone = 1; zone < biomes.length; zone++) {
     const b = biomes[zone], [form,w,h,d,color] = recovery[zone-1];
@@ -82,18 +95,20 @@ export function makeEcosystem(): Course {
     // without turning every route beat into a broad, flat platform.
     const p = piece(`pad-${index+1}`,zone,vec(x,top-h/2,z),vec(w*1.1,h,d*1.1),form,yaw,bend);
     if (zone === 7) p.color = '#666a82';
+    if (zone === 8) p.color = index % 2 ? '#71866a' : '#8d9d78';
+    if (zone === 9) p.color = index % 2 ? '#efb0ae' : '#f3c3a2';
     // Keep the route's springy leaf readable as a small rebound, rather than
     // sending a landing outside the next rope arc.
     if (index === 3) p.bounce = 2.8;
     route.push({platform:p.id,launch:`fly-${index+2}-a`,arrival:`fly-${index+2}-b`,name,zone}); return p;
   });
-  const summit: Platform = {id:'summit',position:vec(-8,180,6),size:vec(8,.4,8),kind:'star',zone:7};
+  const summit: Platform = {id:'summit',position:vec(1,220,35),size:vec(9,.45,9),kind:'star',zone:9};
   platforms.push(summit);
   route.push({platform:'summit',launch:'',name:'별의 정상',zone:7});
   const top = (p: Platform) => p.position.y+p.size.y/2;
   let previous = start;
   for (let index=0; index < route.length; index++) {
-    const i=index+1, p=index===35?summit:routePads[index], b=biomes[p.zone];
+    const i=index+1, p=index===routePads.length?summit:routePads[index], b=biomes[p.zone];
     // Keep the first meal just above the last landing where it can be caught
     // before a deliberate swing. It no longer carries the frog to a distant,
     // scripted arrival point. The rocks leave the basin center open below.
@@ -104,10 +119,12 @@ export function makeEcosystem(): Course {
     if (b.foods.includes('bee')) a.motion={amplitude:vec(.32,.08,.2),period:3.5,phase:0};
     if (a.food==='pollen') a.motion={amplitude:vec(.16,.16,.12),period:4.5,phase:0};
     if (a.food==='moth') a.motion={amplitude:vec(.2,.2,.12),period:4,phase:0};
+    if (a.food==='dew') a.motion={amplitude:vec(.48,.22,.35),period:3.2,phase:.4};
+    if (a.food==='stardust' && p.zone === 9) a.motion={amplitude:vec(.42,.18,.3),period:3.8,phase:.8};
     anchors.push(a);
     previous=vec(p.position.x,top(p)+.4,p.position.z);
   }
-  for(let zone=0;zone<7;zone++) {
+  for(let zone=0;zone<biomes.length-1;zone++) {
     const last=routePads.filter(p=>p.zone===zone).at(-1)!;
     const next=routePads.find(p=>p.zone===zone+1)!;
     const relay=anchors.find(a=>a.id===`fly-${routePads.indexOf(next)+1}-a`)!;
@@ -116,7 +133,7 @@ export function makeEcosystem(): Course {
   }
   // Keep the last two catches on their authored landings. The final summit
   // approach has its own food so it doesn't pull a mid-route anchor away.
-  anchors.find(a=>a.id==='fly-36-b')!.position=vec(summit.position.x-.8,top(summit)+1.2,summit.position.z-1);
+  anchors.find(a=>a.id===`fly-${routePads.length+1}-b`)!.position=vec(summit.position.x-.8,top(summit)+1.2,summit.position.z-1);
   const groundResolution=32, heights:number[]=[];
   for(let x=0;x<=groundResolution;x++) for(let z=0;z<=groundResolution;z++) {
     const lx=(x/groundResolution-.5)*28,lz=(z/groundResolution-.5)*28;
@@ -165,6 +182,20 @@ export function makeEcosystem(): Course {
   anchors.push({id:'food-mountain-shortcut',position:vec(-4,138,-31),zone:5,recovery:false,food:'moth',motion:{amplitude:vec(.2,.15,.12),period:4,phase:0}});
   const water={id:'cloud-dew',position:vec(-12,153,-30),radius:2.5};
   anchors.push({id:'food-cloud-exit',position:vec(-11.4,157,-30),zone:6,recovery:false,food:'dew'});
-  return {id:ECOSYSTEM_ID,mode:'main',height:180,start,platforms,anchors,summit,biomes,solids,rocks:makeRocks(),
+  // Optional lateral catches reward a longer arc and offer a route around the authored landing beats.
+  anchors.push({id:'food-root-shortcut',position:vec(-16.2,190.7,16),zone:8,recovery:false,food:'moth',motion:{amplitude:vec(.34,.2,.28),period:4.2,phase:.5}});
+  anchors.push({id:'food-dawn-detour',position:vec(5.5,211,28),zone:9,recovery:false,food:'stardust',motion:{amplitude:vec(.3,.16,.24),period:3.7,phase:1.1}});
+  // A root arch and split flower petals make the new upper route read as a pair of distinct traversal puzzles.
+  stem(vec(-23,181.5,9),vec(-18,186,15),.42,'trunk');
+  stem(vec(-12,182,18),vec(-8,187,14),.34,'trunk');
+  piece('root-maze-sidewall',8,vec(-24,188,18),vec(2.2,10,8),'stone',-.25,0,'#748679');
+  piece('dawn-petal-outer-arc',9,vec(2,210,25),vec(14,.65,5),'petal',.6,1.5,'#ef9fa7');
+  piece('dawn-petal-inner-arc',9,vec(0,214,17),vec(11,.6,4),'petal',-.55,1.3,'#f5c08d');
+  for(let i=0;i<5;i++) {
+    const a=i*Math.PI*2/5, x=1+Math.sin(a)*2.1, z=22+Math.cos(a)*2.1;
+    stem(vec(x,207,z),vec(x,211+(i%2)*.8,z),.075,'stem');
+    piece(`dawn-stamen-${i}`,9,vec(x,211+(i%2)*.8,z),vec(.42,.48,.42),'stone',a,0,'#ffe08a');
+  }
+  return {id:ECOSYSTEM_ID,mode:'main',height:220,start,platforms,anchors,summit,biomes,solids,rocks:makeRocks(),
     landscapes:[{position:vec(),size:vec(28,1,28),resolution:groundResolution,heights,zone:0,round:true}],waters:[water],route,bounds:70};
 }

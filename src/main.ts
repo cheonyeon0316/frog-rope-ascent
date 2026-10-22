@@ -74,7 +74,7 @@ async function boot(): Promise<void> {
       if (mode === 'main' && !saved) await store.save(sim.snapshot());
       state = saved ? 'paused' : 'playing'; awaitingGrip = false;
       input.active = state === 'playing'; audio.unlock(); ui.show(state, sim);
-      if (!saved) ui.notify(mode === 'training' ? 'Space 점프 → 먹이 연결 → 매달린 채 Space로 먹고 스윙을 만들어 보세요!' : '먹이를 먹으면 기존 스윙 방향으로 튕겨 나가요. 다음 지형 위 먹이에 다시 연결하세요.', 5200);
+      if (!saved) ui.notify(mode === 'training' ? 'Space 점프 → 먹이 연결 → 매달린 채 Space로 먹고 파리 위치까지 대쉬해 보세요!' : '혀 사거리 12m · 먹이를 먹으면 그 위치로 대쉬해요. 다음 지형 위 먹이에 다시 연결하세요.', 5200);
     } catch (e) {
       state = 'error'; ui.show(state, sim, e instanceof Error ? e.message : '시작하지 못했습니다.');
     } finally { starting = false; }
@@ -154,11 +154,11 @@ async function boot(): Promise<void> {
       for (const e of sim.events.splice(0)) {
         audio.play(e); garden.react(e.type, sim.time, e.anchor ? sim.anchorPosition(e.anchor) ?? undefined : undefined);
         const food = sim.course.anchors.find(a => a.id === e.anchor)?.food;
-        if (e.type === 'miss') ui.notify('가까운 먹이를 조준해 보세요. 사거리는 10m입니다.', 1300);
+        if (e.type === 'miss') ui.notify(`가까운 먹이를 조준해 보세요. 사거리는 ${sim.course.id === 'ecosystem-main-v5' ? 18 : 10}m입니다.`, 1300);
         if (e.type === 'blocked') ui.notify('혀가 지형에 막혔어요. 다른 각도로 연결해 보세요.', 1600);
         if (e.type === 'recovery') ui.notify('붙잡았어요. 다시 위로!', 1400);
         if (e.type === 'eat') ui.notify(`${FOOD_NAMES[food ?? 'fly']} 꿀꺽! 3초 뒤 다시 나타나요.`, 1500);
-        if (e.type === 'swing' && e.reason === 'eat-swing') ui.notify('먹기 스윙! 접선 방향으로 날아가요. 다음 지형에 다시 연결해 보세요.', 1500);
+        if (e.type === 'swing' && e.reason === 'launch') ui.notify('먹기 대쉬! 파리 위치까지 날아가요. 다음 지형에 다시 연결해 보세요.', 1500);
         if ((e.type === 'catch' || e.type === 'recovery') && sim.anchor?.motion && !seenMoving) {
           seenMoving = true; ui.notify('움직이는 먹이도 잡으면 멈춰요! 스윙한 뒤 다음 먹이로 도약하세요.', 3500);
         }

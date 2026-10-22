@@ -46,7 +46,7 @@ export class Interface {
           <p class="tagline">한 번 더,<br>더 높은 곳으로.</p>
           <p class="intro">연못에서 풀숲, 바위와 꽃, 나무와 구름을 넘어 별까지.<br>초파리·꽃가루·벌에 혀를 걸고, 다음 풍경으로 도약하세요.</p>
           <div class="menu-actions"><button class="primary" id="start">생태계 오르기 <span>↗</span></button><button class="secondary" id="continue" hidden>계속 오르기</button><button class="text-button" id="training">짧은 연습부터</button></div>
-          <div class="title-bottom"><button class="text-button small" id="settings-title">설정</button><span>8개 생태계 · 180m · 3D 로프 액션</span></div>
+          <div class="title-bottom"><button class="text-button small" id="settings-title">설정</button><span>10개 생태계 · 770m · 고난도 3D 로프 액션</span></div>
         </div>
         <div class="title-note"><span>FIELD NOTE 01</span><strong>높은 곳에도<br>벌레는 있습니다.</strong><small>느긋하게 관찰하고, 과감하게 도약하세요.</small></div>
       </section>
@@ -161,14 +161,14 @@ export class Interface {
     this.height.textContent = String(Math.floor(sim.height)); this.peak.textContent = `${Math.floor(sim.peak)} m`;
     const water = sim.water;
     const refuge = sim.refuge;
-    this.zone.textContent = water ? '이슬 속 · 수영 중' : refuge ? `${refuge.refuge} · 안쪽 지형` : sim.course.mode === 'training' ? '첫 도약 연습 · 12m' : sim.biome?.name ?? ZONES[sim.zone];
+    this.zone.textContent = water ? '이슬 속 · 수영 중' : refuge ? `${refuge.refuge} · 안쪽 지형` : sim.course.mode === 'training' ? '첫 도약 연습 · 12m' : sim.course.id === 'ecosystem-main-v5' && sim.position.y < 0 ? '깊은 우물 안' : sim.biome?.name ?? ZONES[sim.zone];
     this.timer.textContent = formatTime(sim.time);
     this.reticle.style.left = `${(pointer.x + 1) / 2 * 100}%`; this.reticle.style.top = `${(1 - pointer.y) / 2 * 100}%`;
     this.reticle.className = `reticle ${target ? 'valid' : ''} ${sim.attached ? 'attached' : ''}`;
     const button = device === 'pad' ? 'RT' : '왼쪽 버튼';
     const swingButton = device === 'pad' ? 'A' : 'Space';
     const lookHint = device === 'pad' ? '오른쪽 스틱으로 시점' : '우클릭 드래그로 시점';
-    this.hint.textContent = grip ? `${button}을 다시 꾹 눌러 매달린 상태로 재개` : sim.attached ? `WASD 스윙 · ${swingButton} 먹기 스윙 · ${lookHint}` : target ? `${target.transition ? '다음 생태계 · ' : ''}${FOOD_NAMES[target.food ?? 'fly']} · ${button}으로 혀 걸기` : sim.grounded ? 'Space로 점프 · 마우스로 먹이 조준 · 꾹 눌러 연결' : '마우스로 다음 먹이 조준 · 꾹 눌러 연결';
+    this.hint.textContent = grip ? `${button}을 다시 꾹 눌러 매달린 상태로 재개` : sim.attached ? `WASD 스윙 · ${swingButton} 먹기 대쉬 · ${lookHint}` : target ? `${target.transition ? '다음 생태계 · ' : ''}${FOOD_NAMES[target.food ?? 'fly']} · ${button}으로 혀 걸기` : sim.grounded ? 'Space로 점프 · 마우스로 먹이 조준 · 꾹 눌러 연결' : '마우스로 다음 먹이 조준 · 꾹 눌러 연결';
     if (water && !grip && !sim.attached) this.hint.textContent = device === 'pad' ? 'A 꾹 수영↑ · B 수영↓ · 왼쪽 스틱 헤엄 · RT 먹이 연결' : 'Space 꾹 수영↑ · Shift 수영↓ · WASD 헤엄 · 먹이에 재연결';
     this.lookHint.textContent = water ? '물방울 밖의 파리를 관찰하고, 수면 위에서 다시 스윙하세요.' : 'WASD 이동·스윙 · Space 점프 · 우클릭 드래그 시점';
     if (performance.now() > this.toastUntil) this.toast.hidden = true;
@@ -179,8 +179,8 @@ export class Interface {
     this.root.dataset.biome = sim.biome?.id ?? '';
     this.root.dataset.swimming = String(!!water);
     this.root.dataset.activeTime = sim.time.toFixed(4);
-    this.root.dataset.swinging = String(!!sim.impulse);
-    this.root.dataset.swingKind = sim.impulse?.kind ?? '';
+    this.root.dataset.swinging = String(!!sim.impulse || !!sim.dash);
+    this.root.dataset.swingKind = sim.dash?.kind === 'launch' ? 'eat-swing' : sim.impulse?.kind ?? '';
     this.root.dataset.velocityX = sim.velocity.x.toFixed(3); this.root.dataset.velocityY = sim.velocity.y.toFixed(3); this.root.dataset.velocityZ = sim.velocity.z.toFixed(3);
   }
 }

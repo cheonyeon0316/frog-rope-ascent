@@ -2,14 +2,18 @@ import { type Course, type Mode, type SaveState } from './types';
 import { makeLegacyCourse } from './legacy-course';
 import { ECOSYSTEM_ID, makeEcosystem } from './ecosystem';
 import { ECOSYSTEM_V2_ID, makeEcosystemV2 } from './ecosystem-v2';
+import { ECOSYSTEM_V3_ID, makeEcosystemV3 } from './ecosystem-v3';
+import { ECOSYSTEM_V5_ID, makeEcosystemV5 } from './ecosystem-v5';
 
 export function makeCourse(mode: Mode): Course {
-  return mode === 'training' ? makeLegacyCourse(mode) : makeEcosystem();
+  return mode === 'training' ? makeLegacyCourse(mode) : makeEcosystemV5();
 }
 
 export function courseForSave(saved: SaveState): Course {
   if (saved.course === 'garden-main-v1' || saved.mode === 'training') return makeLegacyCourse(saved.mode);
+  if (saved.course === ECOSYSTEM_V5_ID) return makeEcosystemV5();
   if (saved.course === ECOSYSTEM_ID) return makeEcosystem();
+  if (saved.course === ECOSYSTEM_V3_ID) return makeEcosystemV3();
   if (saved.course === ECOSYSTEM_V2_ID) return makeEcosystemV2();
   throw new Error('지원하지 않는 코스의 저장입니다.');
 }
