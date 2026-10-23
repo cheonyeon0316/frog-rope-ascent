@@ -622,7 +622,7 @@ export class Garden {
     this.setFrogOccluded(occluded);
   }
 
-  private keepGroundedCameraAboveSurface(dt: number, grounded: boolean): void {
+  private keepGroundedCameraAboveSurface(dt: number, grounded: boolean, playerPosition: THREE.Vector3): void {
     if (!grounded) {
       this.cameraGroundProbeElapsed = 0;
       this.cameraGroundMinY = -Infinity;
@@ -632,9 +632,11 @@ export class Garden {
     this.cameraGroundProbeElapsed += dt;
     if (this.cameraGroundProbeElapsed >= .08) {
       this.cameraGroundProbeElapsed = 0;
-      const origin = this.cameraGroundRay.ray.origin.set(this.camera.position.x, this.camera.position.y + 12, this.camera.position.z);
+      // Probe below the frog, not below the orbit camera. At a platform edge the
+      // camera can be outside the platform footprint while the frog is still standing on it.
+      const origin = this.cameraGroundRay.ray.origin.set(playerPosition.x, playerPosition.y + 8, playerPosition.z);
       this.cameraGroundRay.set(origin, this.cameraGroundDown);
-      this.cameraGroundRay.far = 32;
+      this.cameraGroundRay.far = 20;
       let nearestSurface = Infinity;
       for (const surface of this.cameraGroundMeshes) {
         this.cameraGroundHits.length = 0;
@@ -642,7 +644,7 @@ export class Garden {
         for (const hit of this.cameraGroundHits) nearestSurface = Math.min(nearestSurface, hit.distance);
       }
       this.cameraGroundMinY = Number.isFinite(nearestSurface)
-        ? this.cameraGroundRay.ray.origin.y - nearestSurface + 1.4
+        ? Math.min(this.cameraGroundRay.ray.origin.y - nearestSurface, playerPosition.y + .1) + 1.4
         : -Infinity;
     }
 
@@ -1605,7 +1607,7 @@ export class Garden {
     const pitch = this.pitch + (motion && !sim.attached ? Math.sin(now * .31 + 1.4) * .009 : 0);
     const offset = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(this.distance);
     this.camera.position.copy(this.focus).add(offset);
-    this.keepGroundedCameraAboveSurface(dt, sim.grounded && !sim.attached);
+    this.keepGroundedCameraAboveSurface(dt, sim.grounded && !sim.attached, p);
     this.camera.lookAt(this.focus);
     this.updateFrogOcclusion(dt);
     const speedFactor = clamp((speed - 3) / 22, 0, 1);
