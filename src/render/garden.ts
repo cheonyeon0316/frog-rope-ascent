@@ -161,6 +161,12 @@ export class Garden {
   private lastTongueEnd = new THREE.Vector3();
   private wallRay = new THREE.Raycaster();
   private collisionMeshes: THREE.Object3D[] = [];
+  private cameraGroundMeshes: THREE.Object3D[] = [];
+  private cameraGroundRay = new THREE.Raycaster();
+  private cameraGroundHits: THREE.Intersection[] = [];
+  private cameraGroundDown = new THREE.Vector3(0, -1, 0);
+  private cameraGroundProbeElapsed = 0;
+  private cameraGroundMinY = -Infinity;
   private frogOcclusionElapsed = 0;
   private occlusionHits: THREE.Intersection[] = [];
   private requestedLowQuality = false;
@@ -616,6 +622,34 @@ export class Garden {
     this.setFrogOccluded(occluded);
   }
 
+  private keepGroundedCameraAboveSurface(dt: number, grounded: boolean): void {
+    if (!grounded) {
+      this.cameraGroundProbeElapsed = 0;
+      this.cameraGroundMinY = -Infinity;
+      return;
+    }
+
+    this.cameraGroundProbeElapsed += dt;
+    if (this.cameraGroundProbeElapsed >= .08) {
+      this.cameraGroundProbeElapsed = 0;
+      const origin = this.cameraGroundRay.ray.origin.set(this.camera.position.x, this.camera.position.y + 12, this.camera.position.z);
+      this.cameraGroundRay.set(origin, this.cameraGroundDown);
+      this.cameraGroundRay.far = 32;
+      let nearestSurface = Infinity;
+      for (const surface of this.cameraGroundMeshes) {
+        this.cameraGroundHits.length = 0;
+        surface.raycast(this.cameraGroundRay, this.cameraGroundHits);
+        for (const hit of this.cameraGroundHits) nearestSurface = Math.min(nearestSurface, hit.distance);
+      }
+      this.cameraGroundMinY = Number.isFinite(nearestSurface)
+        ? this.cameraGroundRay.ray.origin.y - nearestSurface + 1.4
+        : -Infinity;
+    }
+
+    // Grounded framing may lift over a floor or platform. Airborne/swing framing is untouched.
+    if (this.camera.position.y < this.cameraGroundMinY) this.camera.position.y = this.cameraGroundMinY;
+  }
+
   private platform(p: Platform, naturalSupports = false): void {
     const root = new THREE.Group(); root.name = `platform-${p.id}`; root.userData.platformId = p.id;
     root.position.copy(V(p.position)); this.world.add(root); this.platformRoots.set(p.id, root);
@@ -651,7 +685,8 @@ export class Garden {
     const top = this.mesh(topGeometry, mat, root);
     if (p.refuge) top.receiveShadow = false;
     this.collisionMeshes.push(top);
-    if (terrain) { this.terrainDetail(p, root); return; }
+    this.cameraGroundMeshes.push(top);
+    if (terrain { this.terrainDetail(p, root); return; }
     if (p.kind === 'terrace') {
       // Flat inlays show the actual catch boundary without decorative collision walls.
       const trim = material('#f5e5b3');
@@ -1187,7 +1222,7 @@ export class Garden {
     });
     this.ownedMaterials.forEach(m => m.dispose()); this.ownedMaterials.clear();
     this.scene.remove(this.world); this.world = new THREE.Group(); this.scene.add(this.world);
-    this.flies.clear(); this.collisionMeshes.length = 0; this.waterSurfaces.length = 0;
+    this.flies.clear(); this.collisionMeshes.length = 0; this.cameraGroundMeshes.length = 0; this.waterSurfaces.length = 0;
     this.platformRoots.clear(); this.pondDecoration.length = 0;
     this.biomeColors = course.biomes?.map(b => b.color) ?? [];
     this.skyColors = course.biomes?.map(b => new THREE.Color(b.sky)) ?? [];
@@ -1226,6 +1261,7 @@ export class Garden {
       const surface = this.mesh(geometry, surfaceMaterial, this.world, V(land.position));
       surface.receiveShadow = false;
       this.collisionMeshes.push(surface);
+      this.cameraGroundMeshes.push(surface);
       this.grassOnLandscape(this.world, land, course);
       this.floraOnLandscape(this.world, land, course);
       this.flowersOnIsland(this.world, land, course);
@@ -1569,6 +1605,7 @@ export class Garden {
     const pitch = this.pitch + (motion && !sim.attached ? Math.sin(now * .31 + 1.4) * .009 : 0);
     const offset = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(this.distance);
     this.camera.position.copy(this.focus).add(offset);
+    this.keepGroundedCameraAboveSurface(dt, sim.grounded && !sim.attached);
     this.camera.lookAt(this.focus);
     this.updateFrogOcclusion(dt);
     const speedFactor = clamp((speed - 3) / 22, 0, 1);
