@@ -625,8 +625,17 @@ export class Garden {
 
   private keepGroundedCameraAboveSurface(dt: number, grounded: boolean, attached: boolean, playerPosition: THREE.Vector3): void {
     if (attached) {
-      this.cameraGroundProbeElapsed = 0;
-      this.cameraGroundMinY = -Infinity;
+      // Keep the launch platform's clearance while the tongue first takes tension.
+      // Releasing it on the attached state transition can put the camera back below
+      // the platform on the very first swing frame. Let the swing clear naturally.
+      const dx = playerPosition.x - this.cameraGroundProbePlayer.x;
+      const dz = playerPosition.z - this.cameraGroundProbePlayer.z;
+      if (Number.isFinite(this.cameraGroundMinY) && dx * dx + dz * dz > 49
+        && this.camera.position.y > this.cameraGroundMinY + 2) {
+        this.cameraGroundMinY = -Infinity;
+        this.cameraGroundProbeElapsed = 0;
+      }
+      if (this.camera.position.y < this.cameraGroundMinY) this.camera.position.y = this.cameraGroundMinY;
       return;
     }
 
