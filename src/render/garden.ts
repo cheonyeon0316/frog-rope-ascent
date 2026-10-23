@@ -165,6 +165,7 @@ export class Garden {
   private cameraGroundRay = new THREE.Raycaster();
   private cameraGroundHits: THREE.Intersection[] = [];
   private cameraGroundDown = new THREE.Vector3(0, -1, 0);
+  private cameraGroundProbePlayer = new THREE.Vector3();
   private cameraGroundProbeElapsed = 0;
   private cameraGroundMinY = -Infinity;
   private frogOcclusionElapsed = 0;
@@ -622,15 +623,26 @@ export class Garden {
     this.setFrogOccluded(occluded);
   }
 
-  private keepGroundedCameraAboveSurface(dt: number, grounded: boolean, playerPosition: THREE.Vector3): void {
-    if (!grounded) {
+  private keepGroundedCameraAboveSurface(dt: number, grounded: boolean, attached: boolean, playerPosition: THREE.Vector3): void {
+    if (attached) {
       this.cameraGroundProbeElapsed = 0;
       this.cameraGroundMinY = -Infinity;
       return;
     }
 
-    this.cameraGroundProbeElapsed += dt;
-    if (this.cameraGroundProbeElapsed >= .08) {
+    if (grounded) {
+      if (!Number.isFinite(this.cameraGroundMinY)) this.cameraGroundProbeElapsed = .08;
+      this.cameraGroundProbeElapsed += dt;
+    } else if (Number.isFinite(this.cameraGroundMinY)) {
+      const dx = playerPosition.x - this.cameraGroundProbePlayer.x;
+      const dz = playerPosition.z - this.cameraGroundProbePlayer.z;
+      if (dx * dx + dz * dz > 49) {
+        this.cameraGroundMinY = -Infinity;
+        this.cameraGroundProbeElapsed = 0;
+      }
+    }
+
+    if (grounded && this.cameraGroundProbeElapsed >= .08) {
       this.cameraGroundProbeElapsed = 0;
       // Probe below the frog, not below the orbit camera. At a platform edge the
       // camera can be outside the platform footprint while the frog is still standing on it.
@@ -646,6 +658,7 @@ export class Garden {
       this.cameraGroundMinY = Number.isFinite(nearestSurface)
         ? Math.min(this.cameraGroundRay.ray.origin.y - nearestSurface, playerPosition.y + .1) + 1.4
         : -Infinity;
+      this.cameraGroundProbePlayer.copy(playerPosition);
     }
 
     // Grounded framing may lift over a floor or platform. Airborne/swing framing is untouched.
@@ -1607,7 +1620,7 @@ export class Garden {
     const pitch = this.pitch + (motion && !sim.attached ? Math.sin(now * .31 + 1.4) * .009 : 0);
     const offset = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(this.distance);
     this.camera.position.copy(this.focus).add(offset);
-    this.keepGroundedCameraAboveSurface(dt, sim.grounded && !sim.attached, p);
+    this.keepGroundedCameraAboveSurface(dt, sim.grounded, !!sim.attached, p);
     this.camera.lookAt(this.focus);
     this.updateFrogOcclusion(dt);
     const speedFactor = clamp((speed - 3) / 22, 0, 1);
