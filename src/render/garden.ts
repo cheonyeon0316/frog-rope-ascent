@@ -686,7 +686,7 @@ export class Garden {
     if (p.refuge) top.receiveShadow = false;
     this.collisionMeshes.push(top);
     this.cameraGroundMeshes.push(top);
-    if (terrain { this.terrainDetail(p, root); return; }
+    if (terrain) { this.terrainDetail(p, root); return; }
     if (p.kind === 'terrace') {
       // Flat inlays show the actual catch boundary without decorative collision walls.
       const trim = material('#f5e5b3');
