@@ -161,6 +161,11 @@ export class Garden {
   private lastTongueEnd = new THREE.Vector3();
   private wallRay = new THREE.Raycaster();
   private collisionMeshes: THREE.Object3D[] = [];
+  private frogOcclusionElapsed = 0;
+  private occlusionHits: THREE.Intersection[] = [];
+  private requestedLowQuality = false;
+  private adaptiveLowQuality = false;
+  private slowFrameSeconds = 0;
   private platformRoots = new Map<string, THREE.Group>();
   private pondDecoration: THREE.Object3D[] = [];
   private frogGhostMaterials = new Map<THREE.Mesh, { original: THREE.Material | THREE.Material[]; ghost: THREE.Material | THREE.Material[]; renderOrder: number }>();
@@ -205,7 +210,7 @@ export class Garden {
     this.sun = new THREE.DirectionalLight('#ffe1ad', 3.2);
     this.sun.intensity = 2.55;
     this.sun.position.set(20, 28, 16); this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(1536, 1536);
+    this.sun.shadow.mapSize.set(1024, 1024);
     this.sun.shadow.camera.left = -20; this.sun.shadow.camera.right = 20;
     this.sun.shadow.camera.top = 20; this.sun.shadow.camera.bottom = -20;
     this.sun.shadow.camera.near = .5; this.sun.shadow.camera.far = 90;
@@ -589,7 +594,10 @@ export class Garden {
     }
   }
 
-  private updateFrogOcclusion(): void {
+  private updateFrogOcclusion(dt: number): void {
+    this.frogOcclusionElapsed += dt;
+    if (this.frogOcclusionElapsed < .08) return;
+    this.frogOcclusionElapsed = 0;
     const frogPoint = this.frog.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, .35, 0));
     const direction = frogPoint.sub(this.camera.position);
     const distance = direction.length();
@@ -599,7 +607,13 @@ export class Garden {
     }
     this.wallRay.set(this.camera.position, direction.multiplyScalar(1 / distance));
     this.wallRay.far = Math.max(0, distance - .2);
-    this.setFrogOccluded(this.wallRay.intersectObjects(this.collisionMeshes, false).length > 0);
+    let occluded = false;
+    for (const obstacle of this.collisionMeshes) {
+      this.occlusionHits.length = 0;
+      obstacle.raycast(this.wallRay, this.occlusionHits);
+      if (this.occlusionHits.length) { occluded = true; break; }
+    }
+    this.setFrogOccluded(occluded);
   }
 
   private platform(p: Platform, naturalSupports = false): void {
@@ -1281,7 +1295,26 @@ export class Garden {
     this.renderer.setSize(w, h); this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
   }
   quality(low: boolean): void {
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, low ? 1 : 1.75)); this.renderer.shadowMap.enabled = !low; this.resize();
+    this.requestedLowQuality = low;
+    this.adaptiveLowQuality = false;
+    this.slowFrameSeconds = 0;
+    this.applyQuality();
+  }
+  private applyQuality(): void {
+    const low = this.requestedLowQuality || this.adaptiveLowQuality;
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, low ? 1 : 1.5));
+    this.renderer.shadowMap.enabled = !low;
+    this.canvas.dataset.qualityMode = low ? 'low' : 'high';
+    this.resize();
+  }
+  private adaptQualityToFrameTime(dt: number): void {
+    if (this.requestedLowQuality || this.adaptiveLowQuality || document.visibilityState === 'hidden') return;
+    if (dt > 1 / 34) this.slowFrameSeconds += Math.min(dt, .05);
+    else this.slowFrameSeconds = Math.max(0, this.slowFrameSeconds - dt * .75);
+    if (this.slowFrameSeconds >= 1.25) {
+      this.adaptiveLowQuality = true;
+      this.applyQuality();
+    }
   }
   aim(pointerX: number, pointerY: number): { camera: Vec; direction: Vec } {
     this.raycaster.setFromCamera(new THREE.Vector2(pointerX, pointerY), this.camera);
@@ -1537,7 +1570,7 @@ export class Garden {
     const offset = new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(this.distance);
     this.camera.position.copy(this.focus).add(offset);
     this.camera.lookAt(this.focus);
-    this.updateFrogOcclusion();
+    this.updateFrogOcclusion(dt);
     const speedFactor = clamp((speed - 3) / 22, 0, 1);
     const wantedFov = 60 + speedFactor * 3.5 + (sim.attached && horizontalSpeed > 5 ? .6 : 0);
     this.cameraFov = THREE.MathUtils.lerp(this.cameraFov, wantedFov, 1 - Math.exp(-dt * 2.6));
@@ -1562,6 +1595,7 @@ export class Garden {
     this.sunDisc.visible = sim.zone !== 7;
     this.sunDisc.position.copy(p).add(new THREE.Vector3(24, 20, -80));
     this.sunDisc.material.opacity = sim.zone >= 6 && sim.zone !== 7 ? .72 : .9;
+    this.adaptQualityToFrameTime(dt);
     this.renderer.render(this.scene, this.camera);
   }
 }
